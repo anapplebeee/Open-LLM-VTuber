@@ -69,6 +69,15 @@ character_config:
         use_mcpp: False
         mcp_enabled_servers: ["time", "ddg-search"] # 启用的 MCP 服务器
 
+      # OLV 原生直播编排代理。将 conversation_agent_choice 设为
+      # 'live_streamer_agent' 即可选择；直播导播是进程内服务，不是外部 sidecar。
+      live_streamer_agent:
+        llm_provider: 'ollama_llm'
+        faster_first_response: True
+        segment_method: 'pysbd'
+        use_mcpp: False
+        mcp_enabled_servers: []
+
       hume_ai_agent:
         api_key: ''
         host: 'api.hume.ai' # 一般无需更改

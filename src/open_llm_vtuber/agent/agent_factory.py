@@ -3,6 +3,7 @@ from loguru import logger
 
 from .agents.agent_interface import AgentInterface
 from .agents.basic_memory_agent import BasicMemoryAgent
+from .agents.live_streamer_agent import LiveStreamerAgent
 from .stateless_llm_factory import LLMFactory as StatelessLLMFactory
 from .agents.hume_ai import HumeAIAgent
 from .agents.letta_agent import LettaAgent
@@ -36,16 +37,24 @@ class AgentFactory:
         """
         logger.info(f"Initializing agent: {conversation_agent_choice}")
 
-        if conversation_agent_choice == "basic_memory_agent":
+        if conversation_agent_choice in (
+            "basic_memory_agent",
+            "live_streamer_agent",
+        ):
             # Get the LLM provider choice from agent settings
-            basic_memory_settings: dict = agent_settings.get("basic_memory_agent", {})
-            llm_provider: str = basic_memory_settings.get("llm_provider")
+            agent_settings_value: dict = agent_settings.get(
+                conversation_agent_choice, {}
+            )
+            llm_provider: str = agent_settings_value.get("llm_provider")
 
             if not llm_provider:
-                raise ValueError("LLM provider not specified for basic memory agent")
+                raise ValueError(
+                    f"LLM provider not specified for {conversation_agent_choice}"
+                )
 
-            # Get the LLM config for this provider
-            llm_config: dict = llm_configs.get(llm_provider)
+            # Copy before reading interrupt_method; config validation must not
+            # mutate the shared provider configuration.
+            llm_config: dict = dict(llm_configs.get(llm_provider) or {})
             interrupt_method: Literal["system", "user"] = llm_config.pop(
                 "interrupt_method", "user"
             )
@@ -62,22 +71,26 @@ class AgentFactory:
 
             tool_prompts = kwargs.get("system_config", {}).get("tool_prompts", {})
 
-            # Extract MCP components/data needed by BasicMemoryAgent from kwargs
+            # Extract MCP components/data needed by the agent from kwargs
             tool_manager: Optional[ToolManager] = kwargs.get("tool_manager")
             tool_executor: Optional[ToolExecutor] = kwargs.get("tool_executor")
             mcp_prompt_string: str = kwargs.get("mcp_prompt_string", "")
+            agent_class = (
+                LiveStreamerAgent
+                if conversation_agent_choice == "live_streamer_agent"
+                else BasicMemoryAgent
+            )
 
-            # Create the agent with the LLM and live2d_model
-            return BasicMemoryAgent(
+            return agent_class(
                 llm=llm,
                 system=system_prompt,
                 live2d_model=live2d_model,
                 tts_preprocessor_config=tts_preprocessor_config,
-                faster_first_response=basic_memory_settings.get(
+                faster_first_response=agent_settings_value.get(
                     "faster_first_response", True
                 ),
-                segment_method=basic_memory_settings.get("segment_method", "pysbd"),
-                use_mcpp=basic_memory_settings.get("use_mcpp", False),
+                segment_method=agent_settings_value.get("segment_method", "pysbd"),
+                use_mcpp=agent_settings_value.get("use_mcpp", False),
                 interrupt_method=interrupt_method,
                 tool_prompts=tool_prompts,
                 tool_manager=tool_manager,

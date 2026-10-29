@@ -58,6 +58,10 @@ class BasicMemoryAgentConfig(I18nMixin, BaseModel):
     }
 
 
+class LiveStreamerAgentConfig(BasicMemoryAgentConfig):
+    """Configuration for the OLV-native live streamer agent."""
+
+
 class Mem0VectorStoreConfig(I18nMixin, BaseModel):
     """Configuration for Mem0 vector store."""
 
@@ -178,6 +182,9 @@ class AgentSettings(I18nMixin, BaseModel):
     basic_memory_agent: Optional[BasicMemoryAgentConfig] = Field(
         None, alias="basic_memory_agent"
     )
+    live_streamer_agent: Optional[LiveStreamerAgentConfig] = Field(
+        None, alias="live_streamer_agent"
+    )
     mem0_agent: Optional[Mem0Config] = Field(None, alias="mem0_agent")
     hume_ai_agent: Optional[HumeAIConfig] = Field(None, alias="hume_ai_agent")
     letta_agent: Optional[LettaConfig] = Field(None, alias="letta_agent")
@@ -185,6 +192,10 @@ class AgentSettings(I18nMixin, BaseModel):
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "basic_memory_agent": Description(
             en="Configuration for basic memory agent", zh="基础记忆代理配置"
+        ),
+        "live_streamer_agent": Description(
+            en="Configuration for the in-process live streamer agent",
+            zh="进程内直播编排代理配置",
         ),
         "mem0_agent": Description(en="Configuration for Mem0 agent", zh="Mem0代理配置"),
         "hume_ai_agent": Description(
@@ -200,7 +211,11 @@ class AgentConfig(I18nMixin, BaseModel):
     """This class contains all of the configurations related to agent."""
 
     conversation_agent_choice: Literal[
-        "basic_memory_agent", "mem0_agent", "hume_ai_agent", "letta_agent"
+        "basic_memory_agent",
+        "live_streamer_agent",
+        "mem0_agent",
+        "hume_ai_agent",
+        "letta_agent",
     ] = Field(..., alias="conversation_agent_choice")
     agent_settings: AgentSettings = Field(..., alias="agent_settings")
     llm_configs: StatelessLLMConfigs = Field(..., alias="llm_configs")

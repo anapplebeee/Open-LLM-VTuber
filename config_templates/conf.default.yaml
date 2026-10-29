@@ -69,6 +69,16 @@ character_config:
         use_mcpp: True
         mcp_enabled_servers: ["time", "ddg-search"] # Enabled MCP servers
 
+      # OLV-native live director agent. Select it with
+      # conversation_agent_choice: 'live_streamer_agent'. The live event
+      # director is an in-process service, not an external sidecar.
+      live_streamer_agent:
+        llm_provider: 'ollama_llm'
+        faster_first_response: True
+        segment_method: 'pysbd'
+        use_mcpp: False
+        mcp_enabled_servers: []
+
       letta_agent:
         host: 'localhost' # Host address
         port: 8283 # Port number
