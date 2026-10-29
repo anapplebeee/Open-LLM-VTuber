@@ -108,6 +108,7 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_live_session_forwards_one_batch_to_agent_and_output(self):
         outputs: list[object] = []
+        ended: list[bool] = []
         seen: dict[str, object] = {}
 
         class FakeAgent:
@@ -118,12 +119,14 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
         session = LiveSession(
             agent=FakeAgent(),
             on_output=lambda output: _append(outputs, output),
+            on_batch_end=lambda: _append(ended, True),
             director=LiveDirector(window_ms=0, now_ms=lambda: 1000),
         )
         await session.start()
         self.assertTrue(session.ingest(event("session-chat")))
-        await asyncio.wait_for(_wait_until(lambda: bool(outputs)), timeout=1)
+        await asyncio.wait_for(_wait_until(lambda: bool(ended)), timeout=1)
         self.assertEqual(outputs, ["SentenceOutput"])
+        self.assertEqual(ended, [True])
         self.assertIn("live_batch", seen["metadata"])
         await session.stop()
 

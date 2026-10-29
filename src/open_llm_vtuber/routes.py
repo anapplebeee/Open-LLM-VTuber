@@ -7,9 +7,13 @@ from fastapi import APIRouter, WebSocket, UploadFile, File, Response
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 from loguru import logger
+from .agent.agents.live_streamer_agent import LiveStreamerAgent
+from .live.events import RoomEvent
+from .live.output import LiveBrowserOutput
+from .live.runtime import LiveSession
+from .proxy_handler import ProxyHandler
 from .service_context import ServiceContext
 from .websocket_handler import WebSocketHandler
-from .proxy_handler import ProxyHandler
 
 
 def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
@@ -41,6 +45,120 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             logger.error(f"Error in WebSocket connection: {e}")
             await ws_handler.handle_disconnect(client_uid)
             raise
+
+    return router
+
+
+def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
+    """Create the event-driven live-room WebSocket endpoint.
+
+    The endpoint accepts normalized RoomEvent or Bilibili payloads and uses the
+    same OLV agent/TTS/Live2D pipeline as the regular client. It is intentionally
+    separate from /client-ws because a live connection has no microphone or
+    per-viewer history.
+    """
+
+    router = APIRouter()
+    live_active = False
+
+    @router.websocket("/live-ws")
+    async def live_websocket_endpoint(websocket: WebSocket):
+        nonlocal live_active
+        await websocket.accept()
+
+        if live_active:
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "message": "another live session is already active",
+                    }
+                )
+            )
+            await websocket.close()
+            return
+
+        context = default_context_cache
+
+        if not isinstance(context.agent_engine, LiveStreamerAgent):
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "message": (
+                            "live-ws requires conversation_agent_choice: "
+                            "live_streamer_agent"
+                        ),
+                    }
+                )
+            )
+            await websocket.close()
+            return
+
+        live_active = True
+        output = LiveBrowserOutput(context, websocket.send_text)
+        session = LiveSession(
+            agent=context.agent_engine,
+            on_output=output.send,
+            on_batch_end=output.end_batch,
+        )
+        await session.start()
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    message = json.loads(raw)
+                except json.JSONDecodeError:
+                    await websocket.send_text(
+                        json.dumps({"type": "error", "message": "invalid JSON"})
+                    )
+                    continue
+                if not isinstance(message, dict):
+                    await websocket.send_text(
+                        json.dumps(
+                            {"type": "error", "message": "live message must be an object"}
+                        )
+                    )
+                    continue
+
+                message_type = message.get("type")
+                if message_type == "room-event":
+                    try:
+                        event = RoomEvent.model_validate(message.get("event", {}))
+                    except Exception as exc:  # noqa: BLE001 - report validation error
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                    accepted = session.ingest(event)
+                elif message_type == "bilibili-event":
+                    accepted = session.ingest_bilibili(message.get("payload", {}))
+                elif message_type == "status":
+                    await websocket.send_text(
+                        json.dumps({"type": "live-status", **session.status()})
+                    )
+                    continue
+                elif message_type == "stop":
+                    break
+                else:
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "message": f"unsupported live message: {message_type}",
+                            }
+                        )
+                    )
+                    continue
+
+                await websocket.send_text(
+                    json.dumps({"type": "live-event-ack", "accepted": accepted})
+                )
+        except WebSocketDisconnect:
+            logger.info("Live WebSocket disconnected")
+        finally:
+            await session.stop()
+            live_active = False
 
     return router
 

@@ -33,10 +33,12 @@ class LiveSession:
         director: LiveDirector | None = None,
         rundown: RundownState | None = None,
         session_id: str | None = None,
+        on_batch_end: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex
         self.agent = agent
         self.on_output = on_output
+        self.on_batch_end = on_batch_end
         self.rundown = rundown
         self.director = director or LiveDirector(
             topic_provider=lambda: (
@@ -87,4 +89,6 @@ class LiveSession:
     async def _handle_batch(self, batch: Any) -> None:
         async for output in self.agent.chat(make_live_batch_input(batch)):
             await self.on_output(output)
+        if self.on_batch_end:
+            await self.on_batch_end()
         logger.debug("Live batch {} handed to OLV output handler", batch.id)

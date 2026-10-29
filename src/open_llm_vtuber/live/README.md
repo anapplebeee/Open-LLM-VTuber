@@ -32,11 +32,12 @@ Bilibili collector -> RoomEvent -> LiveDirector -> LiveBatch
   -> OLV sentence/TTS pipeline -> output handler -> frontend playback
 ```
 
-The current commit does not start a collector or register a WebSocket controller
-in `run_server.py`. That is intentional: the collector must be selected and
-authorized first, and the existing OLV conversation endpoint must remain the
-single playback owner. Wiring a collector into `server.py` without that owner
-would recreate the dual-agent/dual-audio failure this integration is avoiding.
+`/live-ws` is registered by `server.py` and requires
+`conversation_agent_choice: live_streamer_agent`. It accepts either a normalized
+`RoomEvent` (`{"type": "room-event", "event": {...}}`) or a Bilibili payload
+(`{"type": "bilibili-event", "payload": {...}}`), and sends OLV audio/actions
+through `LiveBrowserOutput`. It does not start a Bilibili network collector;
+authorization and collector deployment remain explicit operational inputs.
 
 ## Choosing the agent
 

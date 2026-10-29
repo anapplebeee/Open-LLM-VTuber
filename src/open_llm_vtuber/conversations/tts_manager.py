@@ -171,6 +171,20 @@ class TTSTaskManager:
             file_name_no_ext=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}",
         )
 
+    async def wait_idle(self, timeout: Optional[float] = None) -> bool:
+        """Wait until queued audio payloads have actually been sent.
+
+        ``task_list`` only covers synthesis. This method also waits for the
+        ordered sender, which is needed by non-conversation callers such as the
+        live output adapter.
+        """
+        try:
+            await asyncio.wait_for(self._payload_queue.join(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning("Timed out waiting for TTS payload sender")
+            return False
+
     def clear(self) -> None:
         """Clear all pending tasks and reset state"""
         self.task_list.clear()
