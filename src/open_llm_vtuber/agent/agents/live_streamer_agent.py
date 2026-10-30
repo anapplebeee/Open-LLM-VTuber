@@ -11,10 +11,18 @@ import inspect
 from collections.abc import AsyncIterator
 from typing import Any
 
+from loguru import logger
+
 from ...live.events import LiveBatch
+from ...live.personality import (
+    RESPONSE_POLICY,
+    LiveInteractionPolicy,
+    sanitize_live_reply,
+)
 from ...live.planner import LiveDecision, LiveReActPlanner
 from ...live.replyer import LiveReplyer
 from ..input_types import BatchInput, TextData, TextSource
+from ..output_types import SentenceOutput
 from ..transformers import (
     actions_extractor,
     display_processor,
@@ -41,10 +49,13 @@ class LiveStreamerAgent(BasicMemoryAgent):
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self._system = f"{self._system}\n{RESPONSE_POLICY}"
+        self.set_system(self._system)
         self._live_planner = live_planner or LiveReActPlanner(llm=self._llm)
         self._live_replyer = live_replyer or LiveReplyer(llm=self._llm)
         self._rundown_state = rundown_state
         self._session_recap = ""
+        self._interaction_policy = LiveInteractionPolicy()
 
     @property
     def llm(self) -> Any:
@@ -59,6 +70,13 @@ class LiveStreamerAgent(BasicMemoryAgent):
         batch = (input_data.metadata or {}).get("live_batch")
         if batch is None:
             async for output in super().chat(input_data):
+                if isinstance(output, SentenceOutput):
+                    cleaned = sanitize_live_reply(output.display_text.text)
+                    if not cleaned:
+                        logger.warning("Discarded unsafe normal-chat reply")
+                        continue
+                    output.display_text.text = cleaned
+                    output.tts_text = cleaned
                 yield output
             return
 
@@ -66,6 +84,10 @@ class LiveStreamerAgent(BasicMemoryAgent):
             batch = _batch_from_mapping(batch)
         if not isinstance(batch, LiveBatch):
             raise TypeError("live_batch metadata must be a LiveBatch")
+        policy = self._interaction_policy.check(batch)
+        if not policy.allow:
+            logger.debug("Live batch suppressed by interaction policy: {}", policy.reason)
+            return
 
         rundown_text = (
             self._rundown_state.context_text()

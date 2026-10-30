@@ -11,6 +11,7 @@ from typing import Any
 
 from ..agent.stateless_llm.stateless_llm_interface import StatelessLLMInterface
 from .events import LiveBatch
+from .personality import RESPONSE_POLICY, sanitize_live_reply
 from .planner import LiveDecision
 
 
@@ -29,7 +30,7 @@ class LiveReplyer:
         llm: StatelessLLMInterface,
         *,
         system_prompt: str = "",
-        max_chars: int = 120,
+        max_chars: int = 60,
     ) -> None:
         self.llm = llm
         self.system_prompt = system_prompt or self.DEFAULT_SYSTEM
@@ -57,14 +58,15 @@ class LiveReplyer:
         if history:
             messages = [*history[-8:], *messages]
         system = self.system_prompt
+        system = f"{system}\n{RESPONSE_POLICY}"
         if persona:
             system = f"{persona}\n\n{system}"
 
         text = await _collect_text(self.llm.chat_completion(messages, system))
-        text = " ".join(text.split()).strip()
+        text = sanitize_live_reply(text, max_chars=self.max_chars)
         if not text:
-            raise RuntimeError("live replyer returned empty speech")
-        return text[: self.max_chars]
+            raise RuntimeError("live replyer returned empty or unsafe speech")
+        return text
 
 
 async def _collect_text(stream: Any) -> str:
