@@ -132,7 +132,21 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                     continue
 
                 message_type = message.get("type")
-                if message_type == "room-event":
+                if message_type == "bilibili-start":
+                    try:
+                        from .live.collectors.bilibili_official import (
+                            BilibiliOfficialConfig,
+                        )
+
+                        config = BilibiliOfficialConfig(**message.get("config", {}))
+                        await session.start_bilibili(config)
+                    except Exception as exc:  # noqa: BLE001 - report config/runtime failure
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                    accepted = True
+                elif message_type == "room-event":
                     try:
                         event = RoomEvent.model_validate(message.get("event", {}))
                     except Exception as exc:  # noqa: BLE001 - report validation error

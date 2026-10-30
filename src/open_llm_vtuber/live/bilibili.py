@@ -12,6 +12,95 @@ from typing import Any
 
 from .events import GiftInfo, RoomEvent, RoomUser
 
+BILIBILI_OFFICIAL_COMMANDS = {
+    "LIVE_OPEN_PLATFORM_DM",
+    "LIVE_OPEN_PLATFORM_SEND_GIFT",
+    "LIVE_OPEN_PLATFORM_SUPER_CHAT",
+    "LIVE_OPEN_PLATFORM_GUARD",
+    "LIVE_OPEN_PLATFORM_LIVE_ROOM_ENTER",
+    "LIVE_OPEN_PLATFORM_WATCHED_CHANGE",
+}
+
+
+def map_bilibili_official_message(
+    payload: dict[str, Any], *, now_ms: int | None = None
+) -> RoomEvent | None:
+    """Map a Bilibili Open Platform WebSocket message to a RoomEvent.
+
+    Open Platform uses ``open_id`` (not account uid), so it is preserved as the
+    viewer identity. Enter and watched-count events are state notifications, not
+    speech stimuli, and are deliberately skipped.
+    """
+    if not isinstance(payload, dict):
+        return None
+    cmd = str(payload.get("cmd") or "")
+    data = payload.get("data")
+    if not isinstance(data, dict) or cmd not in BILIBILI_OFFICIAL_COMMANDS:
+        return None
+
+    user_id = str(data.get("open_id") or "")
+    user_name = str(
+        data.get("uname") or (data.get("user_info") or {}).get("uname") or ""
+    )
+    if not user_id:
+        return None
+
+    timestamp = int(data.get("timestamp") or 0)
+    received_at = (
+        timestamp * 1000 if timestamp else (now_ms or int(time.time() * 1000))
+    )
+    event_id = str(
+        data.get("msg_id")
+        or data.get("message_id")
+        or f"bilibili-{cmd}-{received_at}-{user_id}"
+    )
+    base = {
+        "id": event_id,
+        "platform": "bilibili",
+        "room_id": str(data.get("room_id") or ""),
+        "received_at_ms": max(0, received_at),
+        "user": RoomUser(id=user_id, name=user_name or "unknown"),
+    }
+
+    if cmd == "LIVE_OPEN_PLATFORM_DM":
+        content = str(data.get("msg") or "")
+        if not content:
+            return None
+        return RoomEvent(type="chat", content=content[:500], **base)
+
+    if cmd == "LIVE_OPEN_PLATFORM_SEND_GIFT":
+        combo = data.get("combo_info") or {}
+        count = max(
+            int(data.get("gift_num") or 1), int(combo.get("combo_count") or 0)
+        )
+        return RoomEvent(
+            type="gift",
+            gift=GiftInfo(
+                name=str(data.get("gift_name") or "礼物"), count=max(1, count)
+            ),
+            **base,
+        )
+
+    if cmd == "LIVE_OPEN_PLATFORM_SUPER_CHAT":
+        return RoomEvent(
+            type="gift",
+            content=str(data.get("message") or "")[:500],
+            gift=GiftInfo(name="SC", count=1),
+            **base,
+        )
+
+    if cmd == "LIVE_OPEN_PLATFORM_GUARD":
+        guard_level = int(data.get("guard_level") or 0)
+        guard_name = str(data.get("guard_name") or "大航海")
+        return RoomEvent(
+            type="gift",
+            content=f"开通了{guard_name}"[:500],
+            gift=GiftInfo(name=f"大航海L{guard_level}", count=1),
+            **base,
+        )
+
+    return None
+
 
 def map_bilibili_payload(payload: dict[str, Any]) -> RoomEvent | None:
     """Map Amaidesu-style normalized payloads or a narrow raw payload."""

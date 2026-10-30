@@ -17,9 +17,11 @@ It is deliberately not a second VTuber process.
 - `LiveStreamerAgent`: an `AgentInterface` implementation that applies a planner
   decision and delegates sentence splitting, TTS filtering and Live2D action
   extraction to the existing OLV `BasicMemoryAgent` pipeline.
-- `map_bilibili_payload`: normalized Bilibili payload adapter. Network collection
-  remains an injected port because authorization and collector choice are
-  deployment concerns.
+- `map_bilibili_payload`: normalized Bilibili payload adapter.
+- `BilibiliOfficialCollector`: Open Platform WebSocket adapter requiring the
+  platform's `id_code`, `app_id`, `access_key`, and `access_key_secret`. It emits
+  normalized `RoomEvent` objects into `LiveDirector`; credentials are never
+  committed and live tests require a real authorized room.
 
 ## Wiring boundary
 
@@ -33,11 +35,16 @@ Bilibili collector -> RoomEvent -> LiveDirector -> LiveBatch
 ```
 
 `/live-ws` is registered by `server.py` and requires
-`conversation_agent_choice: live_streamer_agent`. It accepts either a normalized
-`RoomEvent` (`{"type": "room-event", "event": {...}}`) or a Bilibili payload
-(`{"type": "bilibili-event", "payload": {...}}`), and sends OLV audio/actions
-through `LiveBrowserOutput`. It does not start a Bilibili network collector;
-authorization and collector deployment remain explicit operational inputs.
+`conversation_agent_choice: live_streamer_agent`. It accepts normalized
+`RoomEvent` (`{"type": "room-event", "event": {...}}`), a normalized Bilibili
+payload (`{"type": "bilibili-event", "payload": {...}}`), or starts the official
+collector with `{"type": "bilibili-start", "config": {...}}`. Outputs use the
+same OLV browser TTS/Live2D path.
+
+The `bilibili-start` route is local-only and should be protected by the same
+network boundary as `/client-ws`; credentials are not persisted by this route.
+The official collector still requires an authorized Bilibili Open Platform app
+and a real room for acceptance.
 
 ## Choosing the agent
 

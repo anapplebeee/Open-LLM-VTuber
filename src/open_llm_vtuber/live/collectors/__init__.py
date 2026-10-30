@@ -1,0 +1,1 @@
+"""Live platform collector adapters."""

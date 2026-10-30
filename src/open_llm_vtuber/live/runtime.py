@@ -45,6 +45,7 @@ class LiveSession:
         self.on_batch_end = on_batch_end
         self.rundown = rundown
         self.store = store
+        self._bilibili_collector: Any = None
         self.director = director or LiveDirector(
             topic_provider=lambda: (
                 self.rundown.current().goal
@@ -70,6 +71,9 @@ class LiveSession:
         if not self._running:
             return
         self._running = False
+        if self._bilibili_collector:
+            await self._bilibili_collector.stop()
+            self._bilibili_collector = None
         await self.director.stop()
         if self.rundown:
             self.rundown.finish("stop")
@@ -91,10 +95,25 @@ class LiveSession:
             return False
         return self.director.ingest(event)
 
+    async def start_bilibili(self, config: Any) -> None:
+        """Start the official collector and feed its events into this session."""
+        if not self._running:
+            raise RuntimeError("start the live session before its collector")
+        if self._bilibili_collector:
+            raise RuntimeError("Bilibili collector is already running")
+        # Optional dependency boundary: the collector socket is only imported
+        # when a deployment actually enables Bilibili.
+        from .collectors.bilibili_official import BilibiliOfficialCollector
+
+        collector = BilibiliOfficialCollector(config)
+        await collector.start(self.ingest)
+        self._bilibili_collector = collector
+
     def status(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
             "running": self._running,
+            "bilibili_collector": bool(self._bilibili_collector),
             "director": self.director.status(),
             "rundown": self.rundown.snapshot() if self.rundown else None,
         }
