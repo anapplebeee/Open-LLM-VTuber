@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6f8cff"/>
+      <stop offset="1" stop-color="#2f4fe8"/>
+    </linearGradient>
+    <linearGradient id="belly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dce7ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="10" flood-color="#14235c" flood-opacity=".28"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="256" cy="455" rx="150" ry="24" fill="#1b2a66" opacity=".18"/>
+
+  <g filter="url(#shadow)">
+    <path d="M126 278c0-104 58-168 130-168s130 64 130 168c0 94-58 148-130 148s-130-54-130-148z" fill="url(#body)"/>
+    <path d="M164 293c0-72 41-122 92-122s92 50 92 122c0 65-41 103-92 103s-92-38-92-103z" fill="url(#belly)" opacity=".97"/>
+    <path d="M122 284c-36-22-64-18-76 2 17 20 43 26 72 14z" fill="#5476ff"/>
+    <path d="M390 284c36-22 64-18 76 2-17 20-43 26-72 14z" fill="#5476ff"/>
+    <path d="M218 408c-26 12-46 30-50 50 26 5 52-7 70-31z" fill="#4164f7"/>
+    <path d="M294 408c26 12 46 30 50 50-26 5-52-7-70-31z" fill="#4164f7"/>
+    <path d="M256 118c-18-30-10-54 0-72 12 20 20 42 16 66z" fill="#9fc0ff"/>
+    <path d="M250 118c-6-20-2-36 6-48 4 16 6 30 2 48z" fill="#d8e7ff"/>
+  </g>
+
+  <ellipse cx="211" cy="267" rx="18" ry="23" fill="#18255c"/>
+  <ellipse cx="301" cy="267" rx="18" ry="23" fill="#18255c"/>
+  <ellipse cx="207" cy="260" rx="6" ry="8" fill="#fff"/>
+  <ellipse cx="297" cy="260" rx="6" ry="8" fill="#fff"/>
+  <ellipse cx="181" cy="306" rx="18" ry="9" fill="#ff9db6" opacity=".55"/>
+  <ellipse cx="331" cy="306" rx="18" ry="9" fill="#ff9db6" opacity=".55"/>
+  <path d="M238 307c10 12 26 12 36 0" fill="none" stroke="#18255c" stroke-width="6" stroke-linecap="round"/>
+
+  <path d="M154 346c-28 4-46 16-58 32" fill="none" stroke="#7e9bff" stroke-width="9" stroke-linecap="round"/>
+  <path d="M358 346c28 4 46 16 58 32" fill="none" stroke="#7e9bff" stroke-width="9" stroke-linecap="round"/>
+
+  <g transform="translate(352 104)">
+    <path d="M0 24c0-18 12-30 28-30s28 12 28 30v14H0z" fill="#273b91"/>
+    <rect x="0" y="34" width="56" height="9" rx="4.5" fill="#1b2a66"/>
+    <path d="M10 52c10 22 36 22 46 0" fill="none" stroke="#273b91" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="28" cy="18" r="6" fill="#8fe0ff"/>
+  </g>
+
+  <text x="256" y="493" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="15" fill="#52649a">original blue-whale placeholder · not the community 大肥鱼</text>
+</svg>
