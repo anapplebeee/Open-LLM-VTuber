@@ -14,9 +14,14 @@ It is deliberately not a second VTuber process.
   context and bounded history.
 - `LiveSession`: starts a director and forwards each selected `LiveBatch` to an
   OLV agent, then forwards OLV outputs to the caller's output handler.
-- `LiveStreamerAgent`: an `AgentInterface` implementation that applies a planner
-  decision and delegates sentence splitting, TTS filtering and Live2D action
-  extraction to the existing OLV `BasicMemoryAgent` pipeline.
+- `LiveStreamerAgent`: an `AgentInterface` implementation that separates
+  `LiveReActPlanner` (speak/silent decision) from `LiveReplyer` (one short
+  spoken line), then delegates sentence splitting, TTS filtering and Live2D
+  action extraction to OLV's existing pipeline.
+- `LiveReActPlanner`: bounded JSON decision loop; supports one bounded session
+  recap recall step, not arbitrary tool execution.
+- `SessionRecapWriter`: writes a factual recap after a session ends, with a
+  deterministic fallback when the LLM is unavailable.
 - `map_bilibili_payload`: normalized Bilibili payload adapter.
 - `BilibiliOfficialCollector`: Open Platform WebSocket adapter requiring the
   platform's `id_code`, `app_id`, `access_key`, and `access_key_secret`. It emits
