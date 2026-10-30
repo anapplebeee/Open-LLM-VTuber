@@ -99,6 +99,8 @@ src/open_llm_vtuber/live/personality.py
 
 - `RESPONSE_POLICY`：注入模型系统提示词；
 - `sanitize_live_reply`：限制句数/字数，移除 Markdown、思考前缀、身份跑题、凭据泄露和模板称呼；
+- 拒绝“已经发布/回复/评论/上传”等没有工具回执的动作声明；
+- 拒绝明确的自伤方法、爆炸物/毒药制作和未成年性化内容；
 - `LiveStreamerAgent`：普通输入和直播输入都经过输出清理；
 - 测试：`tests/test_live_personality.py`。
 

@@ -81,6 +81,12 @@ class LiveReplySanitizerTest(unittest.TestCase):
         result = sanitize_live_reply("直播间的宝子们，大家好呀～")
         self.assertNotIn("宝子们", result)
         self.assertIn("大家", result)
+        self.assertNotIn("，。", result)
+
+    def test_unverified_actions_and_severe_content_are_rejected(self):
+        self.assertEqual(sanitize_live_reply("我已经发布作品了，大家去看吧。"), "")
+        self.assertEqual(sanitize_live_reply("我刚刚回复了评论。"), "")
+        self.assertEqual(sanitize_live_reply("自杀的方法和步骤是……"), "")
 
     def test_identity_override_and_long_comfort_are_rejected(self):
         self.assertEqual(sanitize_live_reply("我是 DeepSeek，一个 AI 助手。"), "")

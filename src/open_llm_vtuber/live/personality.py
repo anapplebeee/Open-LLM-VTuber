@@ -42,6 +42,14 @@ _TAG = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE = re.compile(r"(?<=[。！？!?；;])")
+_UNVERIFIED_ACTION = re.compile(
+    r"(?:我|已经|刚刚|刚才).{0,8}(?:发布|发|回复|评论|上传|发送).{0,4}(?:了|过)"
+)
+_SEVERE = re.compile(
+    r"(自杀|自残).{0,12}(方法|步骤|教程)|"
+    r"(制作|组装|合成).{0,10}(炸弹|爆炸物|毒药)|"
+    r"未成年.{0,10}(性|裸|色情)"
+)
 
 
 @dataclass(frozen=True)
@@ -139,6 +147,8 @@ def sanitize_live_reply(text: str, *, max_chars: int = 60, max_sentences: int = 
         re.IGNORECASE,
     ):
         return ""
+    if _UNVERIFIED_ACTION.search(text) or _SEVERE.search(text):
+        return ""
     sentences = [part.strip() for part in _SENTENCE.split(text) if part.strip()]
     result = "".join(sentences[:max_sentences]).strip()
     if len(result) > max_chars:
@@ -146,6 +156,7 @@ def sanitize_live_reply(text: str, *, max_chars: int = 60, max_sentences: int = 
         cut = max(shortened.rfind(mark) for mark in "。！？!?；，、, ")
         result = shortened[: cut + 1].strip() if cut >= 8 else shortened.strip()
     result = re.sub(r"(?:直播间的)?(?:宝子们|家人们|宝宝们)", "大家", result)
+    result = re.sub(r"[，,]\s*。", "。", result)
     result = re.sub(r"(.{1,6})\1{3,}", r"\1\1", result)
     result = result + "。" if result and result[-1] not in "。！？!?…" else result
     return emotion + result if emotion and result else result
