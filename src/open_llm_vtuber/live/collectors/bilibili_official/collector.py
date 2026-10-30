@@ -32,6 +32,10 @@ class BilibiliOfficialConfig:
     api_host: str = "https://live-open.biliapi.com"
     checkpoint_path: Path = Path("data/bili_game_id.json")
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "app_id", int(self.app_id))
+        object.__setattr__(self, "checkpoint_path", Path(self.checkpoint_path))
+
     def validate(self) -> None:
         missing = [
             name
