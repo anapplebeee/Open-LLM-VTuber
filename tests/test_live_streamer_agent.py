@@ -7,6 +7,9 @@ from src.open_llm_vtuber.agent.agents.basic_memory_agent import BasicMemoryAgent
 from src.open_llm_vtuber.agent.agents.live_streamer_agent import LiveStreamerAgent
 from src.open_llm_vtuber.agent.input_types import BatchInput, TextData, TextSource
 from src.open_llm_vtuber.agent.output_types import Actions, DisplayText, SentenceOutput
+from src.open_llm_vtuber.live.events import LiveBatch, RoomEvent
+from src.open_llm_vtuber.live.personality import LiveInteractionPolicy
+from src.open_llm_vtuber.live.planner import LiveDecision
 
 
 def _output(text: str) -> SentenceOutput:
@@ -49,6 +52,58 @@ class LiveStreamerWrapperTest(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [item async for item in agent.chat(request)]
         self.assertEqual([item.display_text.text for item in outputs], ["第一句。", "第二句！"])
+
+    async def test_live_batch_reaches_planner_and_replyer(self):
+        calls = []
+
+        class FakePlanner:
+            def plan(self, _batch, **_kwargs):
+                return LiveDecision(True, "test-reply", "说一句")
+
+        class FakeReplyer:
+            async def reply(self, _decision, _batch, **_kwargs):
+                calls.append("replyer")
+                return "小鲸在听。"
+
+        agent = object.__new__(LiveStreamerAgent)
+        agent._live_planner = FakePlanner()
+        agent._live_replyer = FakeReplyer()
+        agent._rundown_state = None
+        agent._memory = []
+        agent._session_recap = ""
+        agent._system = "小鲸"
+        agent._interaction_policy = LiveInteractionPolicy()
+        agent._add_message = lambda *_args, **_kwargs: None
+
+        async def fake_stream(text):
+            calls.append("stream")
+            yield _output(text)
+
+        agent._stream_live_text = fake_stream
+        batch = LiveBatch(
+            id="live-batch",
+            kind="chat",
+            priority=40,
+            events=(
+                RoomEvent(
+                    id="event-1",
+                    type="chat",
+                    platform="test",
+                    received_at_ms=1,
+                    user={"id": "u1", "name": "观众"},
+                    content="你好",
+                ),
+            ),
+        )
+        request = BatchInput(
+            texts=[],
+            images=None,
+            files=None,
+            metadata={"live_batch": batch},
+        )
+        outputs = [item async for item in agent._live_chat(request)]
+        self.assertEqual([item.display_text.text for item in outputs], ["小鲸在听。"])
+        self.assertEqual(calls, ["replyer", "stream"])
 
 
 if __name__ == "__main__":
