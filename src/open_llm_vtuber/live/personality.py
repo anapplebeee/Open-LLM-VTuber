@@ -42,6 +42,14 @@ _TAG = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE = re.compile(r"(?<=[。！？!?；;])")
+_IDENTITY_CLAIM = re.compile(
+    r"(由\s*(?:深度求索|Anthropic|OpenAI)\s*(?:公司)?\s*(?:创造|开发)|"
+    r"我是\s*(?:DeepSeek|Claude|ChatGPT|OpenAI|AI\s*助手|人工智能助手)|"
+    r"(?:作为|一个)?\s*AI\s*(?:助手|语言模型)|"
+    r"人工智能助手|大型语言模型)",
+    re.IGNORECASE,
+)
+IDENTITY_FALLBACK = "我是小鲸，一只蓝鲸娘。"
 _UNVERIFIED_ACTION = re.compile(
     r"(?:我|已经|刚刚|刚才).{0,8}(?:发布|发|回复|评论|上传|发送).{0,4}(?:了|过)"
 )
@@ -127,6 +135,10 @@ class LiveInteractionPolicy:
             self._recent.popleft()
 
 
+def is_identity_claim(text: str) -> bool:
+    return bool(_IDENTITY_CLAIM.search(text))
+
+
 def sanitize_live_reply(text: str, *, max_chars: int = 60, max_sentences: int = 2) -> str:
     """Remove markup and bound speech without cutting a sentence in half."""
 
@@ -141,8 +153,8 @@ def sanitize_live_reply(text: str, *, max_chars: int = 60, max_sentences: int = 
     text = " ".join(text.split()).strip()
     if not text or (text.startswith("{") and text.endswith("}")):
         return ""
-    if re.search(
-        r"(我是\s*(DeepSeek|ChatGPT|OpenAI)|一个\s*AI\s*(助手|语言模型)|system\s*prompt|api[_ ]?key|access[_ ]?key)",
+    if _IDENTITY_CLAIM.search(text) or re.search(
+        r"system\s*prompt|api[_ ]?key|access[_ ]?key",
         text,
         re.IGNORECASE,
     ):
@@ -166,8 +178,10 @@ def sanitize_live_reply(text: str, *, max_chars: int = 60, max_sentences: int = 
 
 
 __all__ = [
+    "IDENTITY_FALLBACK",
     "RESPONSE_POLICY",
     "LiveInteractionPolicy",
     "PolicyDecision",
+    "is_identity_claim",
     "sanitize_live_reply",
 ]

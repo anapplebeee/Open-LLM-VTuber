@@ -11,7 +11,12 @@ from typing import Any
 
 from ..agent.stateless_llm.stateless_llm_interface import StatelessLLMInterface
 from .events import LiveBatch
-from .personality import RESPONSE_POLICY, sanitize_live_reply
+from .personality import (
+    IDENTITY_FALLBACK,
+    RESPONSE_POLICY,
+    is_identity_claim,
+    sanitize_live_reply,
+)
 from .planner import LiveDecision
 
 
@@ -63,6 +68,8 @@ class LiveReplyer:
             system = f"{persona}\n\n{system}"
 
         text = await _collect_text(self.llm.chat_completion(messages, system))
+        if is_identity_claim(text):
+            return IDENTITY_FALLBACK
         text = sanitize_live_reply(text, max_chars=self.max_chars)
         if not text:
             raise RuntimeError("live replyer returned empty or unsafe speech")

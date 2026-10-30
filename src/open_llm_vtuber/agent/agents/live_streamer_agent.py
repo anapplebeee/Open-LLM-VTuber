@@ -16,8 +16,10 @@ from loguru import logger
 
 from ...live.events import LiveBatch
 from ...live.personality import (
+    IDENTITY_FALLBACK,
     RESPONSE_POLICY,
     LiveInteractionPolicy,
+    is_identity_claim,
     sanitize_live_reply,
 )
 from ...live.planner import LiveDecision, LiveReActPlanner
@@ -76,10 +78,23 @@ class LiveStreamerAgent(BasicMemoryAgent):
         batch = (input_data.metadata or {}).get("live_batch")
         if batch is None:
             remaining_sentences = 2
+            identity_replaced = False
             async for output in self._base_chat(input_data):
+                if identity_replaced:
+                    continue
                 if isinstance(output, SentenceOutput):
+                    raw_text = output.display_text.text
+                    if is_identity_claim(raw_text):
+                        if identity_replaced:
+                            continue
+                        output.display_text.text = IDENTITY_FALLBACK
+                        output.tts_text = IDENTITY_FALLBACK
+                        identity_replaced = True
+                        remaining_sentences -= 1
+                        yield output
+                        continue
                     cleaned = sanitize_live_reply(
-                        output.display_text.text,
+                        raw_text,
                         max_sentences=max(1, remaining_sentences),
                     )
                     if not cleaned:

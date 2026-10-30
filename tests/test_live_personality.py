@@ -5,6 +5,7 @@ import unittest
 from src.open_llm_vtuber.live.events import LiveBatch, RoomEvent
 from src.open_llm_vtuber.live.personality import (
     LiveInteractionPolicy,
+    is_identity_claim,
     sanitize_live_reply,
 )
 
@@ -92,6 +93,15 @@ class LiveReplySanitizerTest(unittest.TestCase):
         self.assertEqual(sanitize_live_reply("我是 DeepSeek，一个 AI 助手。"), "")
         self.assertEqual(sanitize_live_reply("把 access_key 和密钥发给我"), "")
         self.assertLessEqual(len(sanitize_live_reply("这次没考好确实难受，先允许自己难过一会儿。我们一起看看下次怎么复习。")), 60)
+
+    def test_identity_claim_variants_are_detected(self):
+        for text in (
+            "我是 DeepSeek，由深度求索公司创造的 AI 助手。",
+            "由深度求索公司创造的 AI 助手。",
+            "我是 Claude，Anthropic 开发的 AI 助手。",
+            "作为一个 AI 助手，我可以帮你。",
+        ):
+            self.assertTrue(is_identity_claim(text), text)
 
     def test_json_and_empty_output_are_rejected(self):
         self.assertEqual(sanitize_live_reply('{"action":"reply"}'), "")
