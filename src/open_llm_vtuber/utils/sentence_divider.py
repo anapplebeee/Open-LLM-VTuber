@@ -2,7 +2,12 @@ import re
 from typing import List, Tuple, AsyncIterator, Optional, Union, Dict, Any
 import pysbd
 from loguru import logger
-from langdetect import detect
+
+try:
+    from langdetect import detect
+except ImportError:  # Optional in minimal deployments; Chinese is the safe default.
+    def detect(_: str) -> str:
+        return "zh-cn"
 from enum import Enum
 from dataclasses import dataclass
 

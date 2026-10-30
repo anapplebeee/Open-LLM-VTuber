@@ -318,6 +318,7 @@ class ASRConfig(I18nMixin):
         "fun_asr",
         "groq_whisper_asr",
         "sherpa_onnx_asr",
+        "none",
     ] = Field(..., alias="asr_model")
     azure_asr: Optional[AzureASRConfig] = Field(None, alias="azure_asr")
     faster_whisper: Optional[FasterWhisperConfig] = Field(None, alias="faster_whisper")

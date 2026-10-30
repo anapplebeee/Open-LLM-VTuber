@@ -1,8 +1,11 @@
 import base64
+import io
+import shutil
+import subprocess
+
 from pydub import AudioSegment
 from pydub.utils import make_chunks
-from ..agent.output_types import Actions
-from ..agent.output_types import DisplayText
+from ..agent.output_types import Actions, DisplayText
 
 
 def _get_volume_by_chunks(audio: AudioSegment, chunk_length_ms: int) -> list:
@@ -22,6 +25,36 @@ def _get_volume_by_chunks(audio: AudioSegment, chunk_length_ms: int) -> list:
     if max_volume == 0:
         raise ValueError("Audio is empty or all zero.")
     return [volume / max_volume for volume in volumes]
+
+
+def _audio_to_wav_bytes(audio_path: str) -> bytes:
+    """Convert any TTS output to WAV without requiring ffprobe."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        try:
+            import imageio_ffmpeg
+
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            ffmpeg = None
+    if ffmpeg:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-i",
+                audio_path,
+                "-f",
+                "wav",
+                "pipe:1",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        return result.stdout
+    audio = AudioSegment.from_file(audio_path)
+    return audio.export(format="wav").read()
 
 
 def prepare_audio_payload(
@@ -60,8 +93,8 @@ def prepare_audio_payload(
         }
 
     try:
-        audio = AudioSegment.from_file(audio_path)
-        audio_bytes = audio.export(format="wav").read()
+        audio_bytes = _audio_to_wav_bytes(audio_path)
+        audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
     except Exception as e:
         raise ValueError(
             f"Error loading or converting generated audio file to wav file '{audio_path}': {e}"

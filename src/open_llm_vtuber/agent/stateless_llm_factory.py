@@ -39,6 +39,7 @@ class LLMFactory:
                 organization_id=kwargs.get("organization_id"),
                 project_id=kwargs.get("project_id"),
                 temperature=kwargs.get("temperature"),
+                stream=kwargs.get("stream", True),
             )
         if llm_provider == "stateless_llm_with_template":
             return StatelessLLMWithTemplate(

@@ -64,6 +64,7 @@ class OpenAICompatibleConfig(StatelessLLMBaseConfig):
     organization_id: str | None = Field(None, alias="organization_id")
     project_id: str | None = Field(None, alias="project_id")
     temperature: float = Field(1.0, alias="temperature")
+    stream: bool = Field(True, alias="stream")
 
     _OPENAI_COMPATIBLE_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "base_url": Description(en="Base URL for the API endpoint", zh="API的URL端点"),
@@ -78,6 +79,10 @@ class OpenAICompatibleConfig(StatelessLLMBaseConfig):
         "temperature": Description(
             en="What sampling temperature to use, between 0 and 2.",
             zh="使用的采样温度，介于 0 和 2 之间。",
+        ),
+        "stream": Description(
+            en="Use streaming responses; disable for gateways that reject streaming.",
+            zh="是否使用流式响应；网关不支持流式时关闭。",
         ),
     }
 
