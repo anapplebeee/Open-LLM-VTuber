@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OLV Live Stage</title>
     <style>
+      :root {
+        --ink: #102052;
+        --card: rgba(8, 20, 60, 0.88);
+        --accent: #7ea2ff;
+      }
       html,
       body {
         width: 100%;
@@ -16,6 +21,7 @@
       body {
         display: grid;
         place-items: center;
+        font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
       }
       .stage {
         width: min(72vmin, 720px);
@@ -39,21 +45,99 @@
           transform: translateY(-14px) rotate(1deg);
         }
       }
-      .hint {
+      #caption {
         position: fixed;
-        left: 24px;
-        bottom: 20px;
-        padding: 10px 14px;
-        border-radius: 10px;
-        background: rgba(8, 20, 60, 0.82);
+        left: 50%;
+        bottom: 7vh;
+        max-width: min(86vw, 980px);
+        transform: translateX(-50%);
+        padding: 12px 20px;
+        border-radius: 14px;
+        background: rgba(8, 20, 60, 0.84);
         color: #fff;
-        font: 14px/1.5 "Microsoft YaHei", sans-serif;
-        opacity: 1;
-        transition: opacity 0.4s;
-      }
-      .hint.hidden {
+        font-size: clamp(18px, 2.2vw, 30px);
+        line-height: 1.45;
+        text-align: center;
         opacity: 0;
+        transition: opacity 0.2s;
         pointer-events: none;
+      }
+      #caption.visible {
+        opacity: 1;
+      }
+      #hud {
+        position: fixed;
+        left: 18px;
+        bottom: 18px;
+        width: min(92vw, 460px);
+        padding: 14px;
+        border: 1px solid rgba(126, 162, 255, 0.4);
+        border-radius: 14px;
+        background: var(--card);
+        color: #fff;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+        transition: opacity 0.2s, transform 0.2s;
+      }
+      #hud.hidden {
+        opacity: 0;
+        transform: translateY(12px);
+        pointer-events: none;
+      }
+      #hud .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #hud input {
+        flex: 1;
+        min-width: 0;
+        padding: 9px 11px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        outline: none;
+      }
+      #hud button {
+        padding: 9px 12px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: var(--ink);
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #hud button.ghost {
+        background: rgba(255, 255, 255, 0.14);
+        color: #fff;
+      }
+      #status {
+        margin: 0 0 9px;
+        color: #cfe0ff;
+        font-size: 13px;
+      }
+      #status b {
+        color: #fff;
+      }
+      .tip {
+        margin: 8px 0 0;
+        color: #9fb4e6;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-right: 5px;
+        border-radius: 50%;
+        background: #ffb84d;
+      }
+      .dot.on {
+        background: #52e08b;
+      }
+      .dot.off {
+        background: #ff6b7a;
       }
       @media (prefers-reduced-motion: reduce) {
         .stage {
@@ -66,13 +150,199 @@
     <div class="stage">
       <img src="/avatars/deepseek_dafeiyu_placeholder.svg" alt="OLV live stage placeholder" />
     </div>
-    <div class="hint" id="hint">
-      直播舞台占位页 · 绿色背景可做色度键 · 点击隐藏提示
+    <div id="caption"></div>
+
+    <div id="hud">
+      <p id="status"><span class="dot" id="dot"></span><b>OLV</b> 未连接</p>
+      <div class="row">
+        <input id="text" placeholder="输入一句话测试 AI 回复…" autocomplete="off" />
+        <button id="send">发送</button>
+        <button id="test" class="ghost">测试声音</button>
+        <button id="mute" class="ghost" title="启用/静音">声音</button>
+      </div>
+      <p class="tip">H 隐藏界面 · 直播姬捕获此窗口 · 绿色背景可做色度键</p>
     </div>
+
     <script>
-      const hint = document.getElementById("hint");
-      hint.addEventListener("click", () => hint.classList.add("hidden"));
-      setTimeout(() => hint.classList.add("hidden"), 5000);
+      (() => {
+        const params = new URLSearchParams(location.search);
+        const wsUrl =
+          params.get("ws") ||
+          `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname || "127.0.0.1"}:12393/client-ws`;
+        const status = document.getElementById("status");
+        const dot = document.getElementById("dot");
+        const caption = document.getElementById("caption");
+        const hud = document.getElementById("hud");
+        const input = document.getElementById("text");
+        const sendButton = document.getElementById("send");
+        const testButton = document.getElementById("test");
+        const muteButton = document.getElementById("mute");
+
+        let socket = null;
+        let audioContext = null;
+        let muted = false;
+        let queue = [];
+        let playing = false;
+        let synthComplete = false;
+        let completionSent = false;
+
+        function setStatus(text, state = "") {
+          status.innerHTML = `<span class="dot ${state}" id="dot"></span><b>OLV</b> ${text}`;
+        }
+
+        function showCaption(text) {
+          if (!text) return;
+          caption.textContent = text;
+          caption.classList.add("visible");
+          clearTimeout(showCaption.timer);
+          showCaption.timer = setTimeout(() => caption.classList.remove("visible"), 8000);
+        }
+
+        function notifyPlaybackComplete() {
+          if (completionSent || !socket || socket.readyState !== WebSocket.OPEN) return;
+          completionSent = true;
+          socket.send(JSON.stringify({ type: "frontend-playback-complete" }));
+        }
+
+        function maybeComplete() {
+          if (synthComplete && !playing && queue.length === 0) notifyPlaybackComplete();
+        }
+
+        async function ensureAudio() {
+          if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          if (audioContext.state === "suspended") await audioContext.resume();
+          return audioContext;
+        }
+
+        async function playPayload(payload) {
+          if (payload.display_text && payload.display_text.text) {
+            showCaption(payload.display_text.text);
+          }
+          if (payload.audio && !muted) {
+            try {
+              const ctx = await ensureAudio();
+              const binary = atob(payload.audio);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+              const buffer = await ctx.decodeAudioData(bytes.buffer);
+              const source = ctx.createBufferSource();
+              source.buffer = buffer;
+              source.connect(ctx.destination);
+              await new Promise((resolve) => {
+                source.onended = resolve;
+                source.start();
+              });
+            } catch (error) {
+              console.warn("audio playback failed", error);
+              setStatus(`音频播放失败：${error.message}`, "off");
+            }
+          } else if (!payload.audio && payload.display_text && payload.display_text.text) {
+            await new Promise((resolve) => setTimeout(resolve, 450));
+          }
+        }
+
+        async function drain() {
+          if (playing) return;
+          playing = true;
+          while (queue.length) {
+            const payload = queue.shift();
+            await playPayload(payload);
+          }
+          playing = false;
+          maybeComplete();
+        }
+
+        function enqueueAudio(payload) {
+          queue.push(payload);
+          drain();
+        }
+
+        function connect() {
+          if (socket && socket.readyState <= 1) return;
+          synthComplete = false;
+          completionSent = false;
+          queue = [];
+          playing = false;
+          setStatus("连接中…");
+          socket = new WebSocket(wsUrl);
+          socket.addEventListener("open", () => setStatus("已连接", "on"));
+          socket.addEventListener("close", () => setStatus("连接已断开", "off"));
+          socket.addEventListener("error", () => setStatus("连接失败，请确认 OLV 正在 12393 端口运行", "off"));
+          socket.addEventListener("message", async (event) => {
+            let payload;
+            try {
+              payload = JSON.parse(event.data);
+            } catch {
+              return;
+            }
+            if (payload.type === "full-text" && payload.text) {
+              if (payload.text !== "Thinking...") showCaption(payload.text);
+              return;
+            }
+            if (payload.type === "audio") {
+              enqueueAudio(payload);
+              return;
+            }
+            if (payload.type === "backend-synth-complete") {
+              synthComplete = true;
+              maybeComplete();
+              return;
+            }
+            if (payload.type === "control" && payload.text === "conversation-chain-start") {
+              synthComplete = false;
+              completionSent = false;
+              return;
+            }
+            if (payload.type === "error") {
+              setStatus(payload.message || "OLV 返回错误", "off");
+            }
+          });
+        }
+
+        function sendText() {
+          const text = input.value.trim();
+          if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+          completionSent = false;
+          synthComplete = false;
+          socket.send(JSON.stringify({ type: "text-input", text }));
+          input.value = "";
+        }
+
+        sendButton.addEventListener("click", sendText);
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") sendText();
+        });
+        testButton.addEventListener("click", () => {
+          if (!("speechSynthesis" in window)) {
+            setStatus("当前浏览器不支持语音合成", "off");
+            return;
+          }
+          const utterance = new SpeechSynthesisUtterance(
+            "声音测试，如果你听到了这句话，说明直播姬的音频链路已经接通。"
+          );
+          utterance.lang = "zh-CN";
+          utterance.rate = 1;
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utterance);
+          setStatus("正在播放浏览器声音测试", "on");
+        });
+        muteButton.addEventListener("click", () => {
+          muted = !muted;
+          muteButton.textContent = muted ? "静音" : "声音";
+          ensureAudio();
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key.toLowerCase() === "h") hud.classList.toggle("hidden");
+        });
+        hud.addEventListener("click", () => ensureAudio(), { once: true });
+
+        connect();
+        setInterval(() => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "heartbeat" }));
+          }
+        }, 30000);
+      })();
     </script>
   </body>
 </html>
