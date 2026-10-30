@@ -16,6 +16,8 @@
 | [QCYTSN/dsh-dafeiyu](https://github.com/QCYTSN/dsh-dafeiyu) | 大肥鱼桌宠 | 代码 MIT；当前素材来自 dsh-pet，`legacy/dafeiyu` 明确为受限素材；不能据此商用 |
 | [BrickAZ/deepseek-chan-emotes](https://github.com/BrickAZ/deepseek-chan-emotes) | 161 个 GIF 表情 | 仓库未提供 LICENSE；README 明确不授予第三方角色/动画额外许可 |
 | [GarfieldZhung/DeepSeek-Whale-Girl](https://github.com/GarfieldZhung/DeepSeek-Whale-Girl) | 小鲸鱼桌宠和静态角色图 | 代码 MIT；README 明确 PNG 图片不在 MIT 覆盖范围，原作者/再分发许可未核实 |
+| [Andersen216/dsh-whale-girl-live2d](https://github.com/Andersen216/dsh-whale-girl-live2d) | 可用的 `.moc3` Live2D 模型、44 个表情、8 个动作 | 代码 MIT；模型作者氵六青的使用须知写“商用直播√、禁止盗用/出售”，但角色形象上游是 CC BY-NC-SA 4.0；PROVENANCE 明确不解除 NC/SA。**不能据此把角色用于商业化直播** |
+| [1190fasheqi/dafeiyu-pet](https://github.com/1190fasheqi/dafeiyu-pet) | 三视图桌宠和精灵图 | 仓库 LICENSE 为 MIT，但没有单独素材授权说明；图片是否由作者有权授权不明确，不能仅凭 MIT 推断可商用 |
 | [diwer/ai-biaoqingbao](https://github.com/diwer/ai-biaoqingbao) | 大肥鱼表情包 | 公开检索显示为 CC BY-NC-SA 4.0 素材来源；不能商用 |
 
 ## 结论
