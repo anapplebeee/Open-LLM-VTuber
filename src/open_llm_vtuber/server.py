@@ -11,7 +11,7 @@ import shutil
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
 from .routes import (
@@ -148,6 +148,17 @@ class WebSocketServer:
             CORSStaticFiles(directory="web_tool", html=True),
             name="web_tool",
         )
+
+        # In a source checkout without the frontend submodule, make the local
+        # stage page the root entry instead of returning a bare 404.
+        if not os.path.exists("frontend/index.html"):
+
+            async def stage_root():
+                return RedirectResponse("/web-tool/live-stage.html")
+
+            self.app.add_api_route(
+                "/", stage_root, methods=["GET"], include_in_schema=False
+            )
 
         # Mount main frontend last (as catch-all)
         self.app.mount(
