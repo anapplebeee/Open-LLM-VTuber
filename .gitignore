@@ -37,11 +37,10 @@ conda
 api_keys.py
 src/open_llm_vtuber/llm/user_credentials.json
 
-# Database files
+# Database and runtime data
 memory.db
 memory.db.bk
-data/live.db
-data/live.db-*
+data/
 
 # Logs
 server.log
