@@ -4,6 +4,9 @@ endpoints for language generation.
 """
 
 from typing import AsyncIterator, List, Dict, Any
+from urllib.parse import urlparse
+
+import httpx
 from openai import (
     AsyncStream,
     AsyncOpenAI,
@@ -19,6 +22,11 @@ from loguru import logger
 
 from .stateless_llm_interface import StatelessLLMInterface
 from ...mcpp.types import ToolCallObject
+
+
+def _is_loopback_url(base_url: str) -> bool:
+    host = urlparse(base_url).hostname
+    return host in {"127.0.0.1", "localhost", "::1"}
 
 
 class AsyncLLM(StatelessLLMInterface):
@@ -47,11 +55,22 @@ class AsyncLLM(StatelessLLMInterface):
         self.model = model
         self.temperature = temperature
         self.stream = stream
+        # A local gateway must not be routed through a machine-wide HTTP proxy.
+        # Keep the default httpx proxy behavior for remote OpenAI endpoints.
+        local_http_client = (
+            httpx.AsyncClient(
+                trust_env=False,
+                timeout=httpx.Timeout(600.0, connect=10.0),
+            )
+            if _is_loopback_url(base_url)
+            else None
+        )
         self.client = AsyncOpenAI(
             base_url=base_url,
             organization=organization_id,
             project=project_id,
             api_key=llm_api_key,
+            http_client=local_http_client,
         )
         self.support_tools = True
 
