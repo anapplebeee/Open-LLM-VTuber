@@ -5,10 +5,11 @@ import uuid
 from pathlib import Path
 
 from src.open_llm_vtuber.live.events import RoomEvent
+from src.open_llm_vtuber.live.recap import SessionRecapWriter
 from src.open_llm_vtuber.live.store import LiveStore
 
 
-class LiveStoreTest(unittest.TestCase):
+class LiveStoreTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.db_path = Path("data") / f"test-live-{uuid.uuid4().hex}.db"
         self.store = LiveStore(self.db_path)
@@ -38,6 +39,17 @@ class LiveStoreTest(unittest.TestCase):
         self.assertEqual(self.store.recent_chat(self.session_id)[0]["content"], "你好呀")
         self.store.end_session(self.session_id, 2000)
         self.assertEqual(self.store.get_session(self.session_id)["status"], "ended")
+
+    async def test_recap_writer_stores_summary_and_latest_recap(self):
+        class FakeLLM:
+            async def chat_completion(self, messages, system=None):
+                yield "本场聊了吃饭和游戏，观众问下次什么时候播。"
+
+        self.store.append_chat(self.session_id, "assistant", "今天吃鱼", 1100)
+        writer = SessionRecapWriter(self.store, FakeLLM())
+        summary = await writer.write(self.session_id)
+        self.assertIn("吃饭", summary)
+        self.assertEqual(self.store.latest_recap()["summary"], summary)
 
     def test_multiple_sessions_keep_events_separate(self):
         self.store.start_session("session-2", 2000)

@@ -38,6 +38,7 @@ class LiveSession:
         session_id: str | None = None,
         on_batch_end: Callable[[], Awaitable[None]] | None = None,
         store: LiveStore | None = None,
+        recap_writer: Any = None,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex
         self.agent = agent
@@ -45,6 +46,7 @@ class LiveSession:
         self.on_batch_end = on_batch_end
         self.rundown = rundown
         self.store = store
+        self.recap_writer = recap_writer
         self._bilibili_collector: Any = None
         self.director = director or LiveDirector(
             topic_provider=lambda: (
@@ -81,6 +83,11 @@ class LiveSession:
             await asyncio.to_thread(
                 self.store.end_session, self.session_id, int(time.time() * 1000)
             )
+            if self.recap_writer:
+                try:
+                    await self.recap_writer.write(self.session_id)
+                except Exception:  # noqa: BLE001 - recap must not break shutdown
+                    logger.exception("Session recap failed for {}", self.session_id)
 
     def ingest(self, event: RoomEvent) -> bool:
         if not self._running:
@@ -123,6 +130,11 @@ class LiveSession:
             await asyncio.to_thread(
                 self.store.append_events, self.session_id, batch.events
             )
+            if hasattr(self.agent, "set_live_context"):
+                recap = await asyncio.to_thread(self.store.latest_recap)
+                self.agent.set_live_context(
+                    recent_recap=str(recap["summary"]) if recap else ""
+                )
         async for output in self.agent.chat(make_live_batch_input(batch)):
             await self.on_output(output)
         if self.on_batch_end:

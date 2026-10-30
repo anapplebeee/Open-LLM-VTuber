@@ -10,6 +10,7 @@ from loguru import logger
 from .agent.agents.live_streamer_agent import LiveStreamerAgent
 from .live.events import RoomEvent
 from .live.output import LiveBrowserOutput
+from .live.recap import SessionRecapWriter
 from .live.runtime import LiveSession
 from .live.store import LiveStore
 from .proxy_handler import ProxyHandler
@@ -105,12 +106,17 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             store=live_store,
             session_id=session_id,
         )
+        recap_writer = SessionRecapWriter(
+            live_store,
+            getattr(context.agent_engine, "llm", None),
+        )
         session = LiveSession(
             agent=context.agent_engine,
             on_output=output.send,
             on_batch_end=output.end_batch,
             session_id=session_id,
             store=live_store,
+            recap_writer=recap_writer,
         )
         await session.start()
         try:

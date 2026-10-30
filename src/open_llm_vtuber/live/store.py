@@ -129,6 +129,13 @@ class LiveStore:
                 (session_id, role, content, created_at_ms),
             )
 
+    def latest_recap(self) -> dict[str, Any] | None:
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT session_id, summary, created_at_ms FROM session_recaps ORDER BY created_at_ms DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
+
     def set_recap(self, session_id: str, summary: str, created_at_ms: int) -> None:
         with self._session() as connection:
             connection.execute(
