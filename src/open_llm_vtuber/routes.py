@@ -138,7 +138,12 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                             BilibiliOfficialConfig,
                         )
 
-                        config = BilibiliOfficialConfig(**message.get("config", {}))
+                        raw_config = message.get("config", {})
+                        config = (
+                            BilibiliOfficialConfig.from_env()
+                            if raw_config.get("from_env")
+                            else BilibiliOfficialConfig(**raw_config)
+                        )
                         await session.start_bilibili(config)
                     except Exception as exc:  # noqa: BLE001 - report config/runtime failure
                         await websocket.send_text(

@@ -8,7 +8,8 @@ them to the live director.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import os
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,41 @@ class BilibiliOfficialConfig:
     def __post_init__(self) -> None:
         object.__setattr__(self, "app_id", int(self.app_id))
         object.__setattr__(self, "checkpoint_path", Path(self.checkpoint_path))
+
+    @classmethod
+    def from_env(cls, environment: Mapping[str, str] | None = None) -> BilibiliOfficialConfig:
+        env = environment if environment is not None else os.environ
+        missing = [
+            name
+            for name in (
+                "BILI_ID_CODE",
+                "BILI_APP_ID",
+                "BILI_ACCESS_KEY",
+                "BILI_ACCESS_KEY_SECRET",
+            )
+            if not env.get(name)
+        ]
+        if missing:
+            raise ValueError(
+                "missing Bilibili environment variables: " + ", ".join(missing)
+            )
+        return cls(
+            id_code=env["BILI_ID_CODE"],
+            app_id=int(env["BILI_APP_ID"]),
+            access_key=env["BILI_ACCESS_KEY"],
+            access_key_secret=env["BILI_ACCESS_KEY_SECRET"],
+            api_host=env.get("BILI_API_HOST", "https://live-open.biliapi.com"),
+            checkpoint_path=Path(
+                env.get("BILI_GAME_ID_CHECKPOINT", "data/bili_game_id.json")
+            ),
+        )
+
+    def __repr__(self) -> str:
+        return (
+            "BilibiliOfficialConfig("
+            f"id_code={self.id_code!r}, app_id={self.app_id!r}, "
+            f"api_host={self.api_host!r}, access_key_secret='***')"
+        )
 
     def validate(self) -> None:
         missing = [

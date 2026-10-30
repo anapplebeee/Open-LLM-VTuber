@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from src.open_llm_vtuber.live.bilibili import map_bilibili_official_message
 from src.open_llm_vtuber.live.collectors.bilibili_official import (
@@ -79,6 +80,19 @@ class BilibiliOfficialMappingTest(unittest.TestCase):
     def test_config_requires_credentials(self):
         with self.assertRaises(ValueError):
             BilibiliOfficialConfig("", 0, "", "").validate()
+
+    def test_config_reads_environment_without_exposing_secret(self):
+        env = {
+            "BILI_ID_CODE": "room-owner-code",
+            "BILI_APP_ID": "12345",
+            "BILI_ACCESS_KEY": "key",
+            "BILI_ACCESS_KEY_SECRET": "super-secret-value",
+        }
+        with patch.dict("os.environ", env, clear=False):
+            config = BilibiliOfficialConfig.from_env()
+        self.assertEqual(config.app_id, 12345)
+        self.assertEqual(config.id_code, "room-owner-code")
+        self.assertNotIn("super-secret-value", repr(config))
 
 
 if __name__ == "__main__":
