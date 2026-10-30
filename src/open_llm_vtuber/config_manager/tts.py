@@ -279,15 +279,16 @@ class XTTSConfig(I18nMixin):
 class GPTSoVITSConfig(I18nMixin):
     """Configuration for GPT-SoVITS."""
 
-    api_url: str = Field(..., alias="api_url")
-    text_lang: str = Field(..., alias="text_lang")
-    ref_audio_path: str = Field(..., alias="ref_audio_path")
-    prompt_lang: str = Field(..., alias="prompt_lang")
-    prompt_text: str = Field(..., alias="prompt_text")
-    text_split_method: str = Field(..., alias="text_split_method")
-    batch_size: str = Field(..., alias="batch_size")
-    media_type: str = Field(..., alias="media_type")
-    streaming_mode: str = Field(..., alias="streaming_mode")
+    api_url: str = Field("http://127.0.0.1:9880/tts", alias="api_url")
+    text_lang: str = Field("zh", alias="text_lang")
+    ref_audio_path: str = Field("", alias="ref_audio_path")
+    prompt_lang: str = Field("zh", alias="prompt_lang")
+    prompt_text: str = Field("", alias="prompt_text")
+    text_split_method: str = Field("cut5", alias="text_split_method")
+    batch_size: int = Field(1, alias="batch_size")
+    media_type: str = Field("wav", alias="media_type")
+    streaming_mode: int = Field(0, alias="streaming_mode")
+    timeout: int = Field(120, alias="timeout")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "api_url": Description(
@@ -304,7 +305,11 @@ class GPTSoVITSConfig(I18nMixin):
         ),
         "batch_size": Description(en="Batch size for processing", zh="处理批次大小"),
         "media_type": Description(en="Output media type", zh="输出媒体类型"),
-        "streaming_mode": Description(en="Enable streaming mode", zh="启用流式模式"),
+        "streaming_mode": Description(
+            en="api_v2 streaming mode (OLV file output uses 0)",
+            zh="api_v2 流式档位（OLV 文件输出使用 0）",
+        ),
+        "timeout": Description(en="Request timeout in seconds", zh="请求超时秒数"),
     }
 
 

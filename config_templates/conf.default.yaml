@@ -361,9 +361,10 @@ character_config:
       prompt_lang: 'zh'
       prompt_text: ''
       text_split_method: 'cut5'
-      batch_size: '1'
+      batch_size: 1
       media_type: 'wav'
-      streaming_mode: 'false'
+      streaming_mode: 0
+      timeout: 120
 
     fish_api_tts:
       # The API key for the Fish TTS API.
@@ -511,3 +512,5 @@ live_config:
     room_ids: [1991478060]
     # SESSDATA cookie value (optional, for authenticated requests)
     sessdata: ""
+
+

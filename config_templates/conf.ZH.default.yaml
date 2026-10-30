@@ -368,9 +368,9 @@ character_config:
       prompt_lang: 'zh' # str.(必需) 参考音频提示文本的语言
       prompt_text: '' # str.(可选) 参考音频的提示文本
       text_split_method: 'cut5' # 文本分割方法
-      batch_size: '1' # 批处理大小
+      batch_size: 1 # 批处理大小
       media_type: 'wav' # 媒体类型
-      streaming_mode: 'false' # 流模式
+      streaming_mode: 0 # 流模式
 
     fish_api_tts:
       # Fish TTS API 的 API 密钥。
@@ -506,3 +506,5 @@ live_config:
     room_ids: [1991478060]
     # SESSDATA cookie值（可选，用于认证请求，可以查看发送弹幕用户名）
     sessdata: ""
+
+

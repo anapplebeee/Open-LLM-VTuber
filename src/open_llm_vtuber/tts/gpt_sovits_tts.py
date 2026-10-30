@@ -1,10 +1,16 @@
-####
-# change from xTTS.py
-####
+"""GPT-SoVITS api_v2 TTS adapter.
+
+GPT-SoVITS api_v2 calls ``GET /tts`` with the reference-audio fields on every
+request. This adapter intentionally uses ``streaming_mode=0`` because OLV's
+TTS interface returns one complete audio file; sentence-level streaming is
+handled by OLV above this boundary.
+"""
 
 import re
+
 import requests
 from loguru import logger
+
 from .tts_interface import TTSInterface
 
 
@@ -17,26 +23,35 @@ class TTSEngine(TTSInterface):
         prompt_lang: str = "zh",
         prompt_text: str = "",
         text_split_method: str = "cut5",
-        batch_size: str = "1",
+        batch_size: int = 1,
         media_type: str = "wav",
-        streaming_mode: str = "ture",
+        streaming_mode: int = 0,
+        timeout: int = 120,
+        **_: object,
     ):
-        self.api_url = api_url
+        self.api_url = api_url.rstrip("/")
+        if not self.api_url.endswith("/tts"):
+            self.api_url += "/tts"
         self.text_lang = text_lang
         self.ref_audio_path = ref_audio_path
         self.prompt_lang = prompt_lang
         self.prompt_text = prompt_text
         self.text_split_method = text_split_method
-        self.batch_size = batch_size
+        self.batch_size = int(batch_size)
         self.media_type = media_type
-        self.streaming_mode = streaming_mode
+        self.streaming_mode = int(streaming_mode)
+        self.timeout = timeout
 
-    def generate_audio(self, text, file_name_no_ext=None):
+    def generate_audio(self, text: str, file_name_no_ext=None) -> str:
+        if not self.ref_audio_path or not self.prompt_text:
+            logger.error(
+                "GPT-SoVITS api_v2 requires both ref_audio_path and prompt_text"
+            )
+            return None
+
         file_name = self.generate_cache_file_name(file_name_no_ext, self.media_type)
-        cleaned_text = re.sub(r"\[.*?\]", "", text)
-        # Prepare the data for the POST request
-        data = {
-            "text": cleaned_text,
+        params = {
+            "text": re.sub(r"\[.*?\]", "", text),
             "text_lang": self.text_lang,
             "ref_audio_path": self.ref_audio_path,
             "prompt_lang": self.prompt_lang,
@@ -44,21 +59,36 @@ class TTSEngine(TTSInterface):
             "text_split_method": self.text_split_method,
             "batch_size": self.batch_size,
             "media_type": self.media_type,
-            "streaming_mode": self.streaming_mode,
+            "streaming_mode": 0,
         }
 
-        # Send POST request to the TTS API
-        response = requests.get(self.api_url, params=data, timeout=120)
-
-        # Check if the request was successful
-        if response.status_code == 200:
-            # Save the audio content to a file
+        try:
+            response = requests.get(
+                self.api_url,
+                params=params,
+                timeout=(10, self.timeout),
+            )
+            if response.status_code != 200:
+                logger.error(
+                    "GPT-SoVITS api_v2 returned {}: {}",
+                    response.status_code,
+                    response.text[:500],
+                )
+                return None
+            if not response.content:
+                logger.error("GPT-SoVITS api_v2 returned empty audio")
+                return None
             with open(file_name, "wb") as audio_file:
                 audio_file.write(response.content)
-            return file_name
-        else:
-            # Handle errors or unsuccessful requests
-            logger.critical(
-                f"Error: Failed to generate audio. Status code: {response.status_code}"
+        except requests.RequestException as exc:
+            logger.error(
+                "GPT-SoVITS api_v2 request failed ({}): {}",
+                self.api_url,
+                type(exc).__name__,
             )
             return None
+        return file_name
+
+
+# api_v2 reference fields:
+# text_lang / ref_audio_path / prompt_lang / prompt_text
