@@ -11,6 +11,7 @@ from .agent.agents.live_streamer_agent import LiveStreamerAgent
 from .live.events import RoomEvent
 from .live.output import LiveBrowserOutput
 from .live.runtime import LiveSession
+from .live.store import LiveStore
 from .proxy_handler import ProxyHandler
 from .service_context import ServiceContext
 from .websocket_handler import WebSocketHandler
@@ -60,6 +61,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
 
     router = APIRouter()
     live_active = False
+    live_store = LiveStore()
 
     @router.websocket("/live-ws")
     async def live_websocket_endpoint(websocket: WebSocket):
@@ -96,11 +98,19 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             return
 
         live_active = True
-        output = LiveBrowserOutput(context, websocket.send_text)
+        session_id = uuid4().hex
+        output = LiveBrowserOutput(
+            context,
+            websocket.send_text,
+            store=live_store,
+            session_id=session_id,
+        )
         session = LiveSession(
             agent=context.agent_engine,
             on_output=output.send,
             on_batch_end=output.end_batch,
+            session_id=session_id,
+            store=live_store,
         )
         await session.start()
         try:

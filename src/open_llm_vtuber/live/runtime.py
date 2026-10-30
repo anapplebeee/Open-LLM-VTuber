@@ -7,6 +7,8 @@ conversation layer remain the single owner of TTS, playback and Live2D.
 
 from __future__ import annotations
 
+import asyncio
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -18,6 +20,7 @@ from .bilibili import map_bilibili_payload
 from .director import LiveDirector
 from .events import RoomEvent
 from .rundown import RundownState
+from .store import LiveStore
 
 OutputHandler = Callable[[Any], Awaitable[None]]
 
@@ -34,12 +37,14 @@ class LiveSession:
         rundown: RundownState | None = None,
         session_id: str | None = None,
         on_batch_end: Callable[[], Awaitable[None]] | None = None,
+        store: LiveStore | None = None,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex
         self.agent = agent
         self.on_output = on_output
         self.on_batch_end = on_batch_end
         self.rundown = rundown
+        self.store = store
         self.director = director or LiveDirector(
             topic_provider=lambda: (
                 self.rundown.current().goal
@@ -54,6 +59,10 @@ class LiveSession:
             raise RuntimeError("live session is already running")
         if self.rundown:
             self.rundown.begin("system")
+        if self.store:
+            await asyncio.to_thread(
+                self.store.start_session, self.session_id, int(time.time() * 1000)
+            )
         await self.director.start(self._handle_batch)
         self._running = True
 
@@ -64,6 +73,10 @@ class LiveSession:
         await self.director.stop()
         if self.rundown:
             self.rundown.finish("stop")
+        if self.store:
+            await asyncio.to_thread(
+                self.store.end_session, self.session_id, int(time.time() * 1000)
+            )
 
     def ingest(self, event: RoomEvent) -> bool:
         if not self._running:
@@ -87,6 +100,10 @@ class LiveSession:
         }
 
     async def _handle_batch(self, batch: Any) -> None:
+        if self.store:
+            await asyncio.to_thread(
+                self.store.append_events, self.session_id, batch.events
+            )
         async for output in self.agent.chat(make_live_batch_input(batch)):
             await self.on_output(output)
         if self.on_batch_end:
