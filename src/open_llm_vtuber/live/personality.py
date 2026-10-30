@@ -28,7 +28,7 @@ RESPONSE_POLICY = """
 - 这是 AI 主播，不冒充真人；无需反复解释技术架构，但不得谎称拥有身体或线下经历。
 """
 
-_NOISE = re.compile(r"^[\W_\s，。！？!?~～…、,.!！?？A-Za-z0-9]+$")
+_NOISE = re.compile(r"^[\W_\s，。！？!?~～…、,.!！?？0-9]+$")
 _INJECTION = re.compile(
     r"(忽略.{0,12}(之前|以上|所有|原有).{0,12}(指令|规则|提示词)|"
     r"system\s*prompt|developer\s*message|jailbreak|越狱|"
