@@ -8,6 +8,7 @@ OLV BasicMemoryAgent pipeline. The text input is data, never a system prompt.
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -56,6 +57,11 @@ class LiveStreamerAgent(BasicMemoryAgent):
         self._rundown_state = rundown_state
         self._session_recap = ""
         self._interaction_policy = LiveInteractionPolicy()
+        # BasicMemoryAgent.__init__ assigns self.chat as an instance attribute.
+        # Capture it before binding the live-aware wrapper, otherwise the
+        # method-level override below is shadowed and never runs.
+        self._base_chat = self.chat
+        self.chat = self._live_chat
 
     @property
     def llm(self) -> Any:
@@ -66,17 +72,26 @@ class LiveStreamerAgent(BasicMemoryAgent):
         """Inject the latest session recap without changing live history."""
         self._session_recap = recent_recap
 
-    async def chat(self, input_data: BatchInput) -> AsyncIterator[Any]:
+    async def _live_chat(self, input_data: BatchInput) -> AsyncIterator[Any]:
         batch = (input_data.metadata or {}).get("live_batch")
         if batch is None:
-            async for output in super().chat(input_data):
+            remaining_sentences = 2
+            async for output in self._base_chat(input_data):
                 if isinstance(output, SentenceOutput):
-                    cleaned = sanitize_live_reply(output.display_text.text)
+                    cleaned = sanitize_live_reply(
+                        output.display_text.text,
+                        max_sentences=max(1, remaining_sentences),
+                    )
                     if not cleaned:
                         logger.warning("Discarded unsafe normal-chat reply")
                         continue
+                    remaining_sentences -= len(
+                        re.findall(r"[。！？!?；;]", cleaned)
+                    ) or 1
                     output.display_text.text = cleaned
                     output.tts_text = cleaned
+                    if remaining_sentences < 0:
+                        continue
                 yield output
             return
 
@@ -138,7 +153,7 @@ class LiveStreamerAgent(BasicMemoryAgent):
                 "skip_memory": False,
             },
         )
-        async for output in super().chat(prepared):
+        async for output in self._base_chat(prepared):
             yield output
 
     async def _stream_live_text(self, text: str) -> AsyncIterator[Any]:

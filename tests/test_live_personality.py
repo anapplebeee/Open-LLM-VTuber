@@ -77,11 +77,11 @@ class LiveReplySanitizerTest(unittest.TestCase):
         self.assertLessEqual(len(result), 24)
         self.assertIn("这是小鲸的正常回答", result)
 
-    def test_template_greetings_are_replaced(self):
+    def test_template_greetings_are_not_forcefully_removed(self):
         result = sanitize_live_reply("直播间的宝子们，大家好呀～")
-        self.assertNotIn("宝子们", result)
-        self.assertIn("大家", result)
+        self.assertIn("宝子们", result)
         self.assertNotIn("，。", result)
+        self.assertEqual(sanitize_live_reply("你好，"), "你好。")
 
     def test_unverified_actions_and_severe_content_are_rejected(self):
         self.assertEqual(sanitize_live_reply("我已经发布作品了，大家去看吧。"), "")
@@ -96,6 +96,8 @@ class LiveReplySanitizerTest(unittest.TestCase):
     def test_json_and_empty_output_are_rejected(self):
         self.assertEqual(sanitize_live_reply('{"action":"reply"}'), "")
         self.assertEqual(sanitize_live_reply("  \n"), "")
+        self.assertEqual(sanitize_live_reply("🐳💦"), "")
+        self.assertTrue(sanitize_live_reply("小鲸来啦🐳").endswith("🐳"))
 
 
 if __name__ == "__main__":
