@@ -55,7 +55,7 @@ class RoomEvent(BaseModel):
 
     schema_version: Literal[1] = 1
     id: str = Field(min_length=1, max_length=100)
-    type: Literal["chat", "gift", "operator"]
+    type: Literal["chat", "gift", "operator", "join"]
     platform: str = Field(min_length=1, max_length=40)
     room_id: str = Field(default="", max_length=100)
     received_at_ms: int = Field(ge=0)

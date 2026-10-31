@@ -12,15 +12,15 @@ from typing import Any
 
 from .events import GiftInfo, RoomEvent, RoomUser
 
-__all__ = ["map_douyin_payload"]
+__all__ = ["map_douyin_payload", "map_dyhub_event"]
 
 _CHAT_METHODS = {"WebcastChatMessage", "chat", "danmaku", "comment", "message"}
 _GIFT_METHODS = {"WebcastGiftMessage", "gift", "super_chat", "superchat"}
+_JOIN_METHODS = {"WebcastRoomEnterMessage", "WebcastMemberMessage", "enter", "join"}
 _IGNORED_METHODS = {
     "WebcastLikeMessage",
     "like",
     "WebcastRoomUserSeqMessage",
-    "enter",
     "room_user_seq",
 }
 
@@ -85,6 +85,7 @@ def map_douyin_payload(
     if (
         method not in _CHAT_METHODS
         and method not in _GIFT_METHODS
+        and method not in _JOIN_METHODS
         and not (_field(data, "content", "text", "message") or data.get("gift"))
     ):
         # Be liberal for already-normalized collectors.
@@ -105,6 +106,9 @@ def map_douyin_payload(
         "received_at_ms": max(0, received_at),
         "user": user,
     }
+
+    if method in _JOIN_METHODS:
+        return RoomEvent(type="join", **common)
 
     is_gift = method in _GIFT_METHODS or bool(data.get("gift"))
     if is_gift:
@@ -132,6 +136,47 @@ def map_douyin_payload(
     if not content:
         return None
     return RoomEvent(type="chat", content=content[:500], **common)
+
+
+def map_dyhub_event(payload: dict[str, Any]) -> RoomEvent | None:
+    """Map a dyhub standard event (chat/gift) into a RoomEvent.
+
+    dyhub uses ``{"type":"chat","roomId":...,"user":...,"data":{"content":...}}``.
+    It is converted through the same normalizer as other collectors so the
+    bridge cannot bypass validation.
+    """
+    if not isinstance(payload, dict):
+        return None
+    event_type = str(payload.get("type") or "")
+    if event_type not in {"chat", "gift", "enter", "join"}:
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    user = payload.get("user")
+    if isinstance(user, dict):
+        user = dict(user)
+    normalized: dict[str, Any] = {
+        "type": event_type,
+        "message_id": payload.get("id") or payload.get("message_id"),
+        "room_id": payload.get("roomId") or payload.get("room_id"),
+        "user": user or {},
+    }
+    if event_type in {"enter", "join"}:
+        normalized["type"] = "enter"
+        normalized["content"] = ""
+    elif event_type == "chat":
+        normalized["content"] = data.get("content") or data.get("text") or ""
+    else:
+        normalized["gift"] = {
+            "name": data.get("giftName") or data.get("gift_name") or "礼物",
+            "count": data.get("repeatCount")
+            or data.get("comboCount")
+            or data.get("count")
+            or 1,
+        }
+        normalized["content"] = data.get("content") or ""
+    return map_douyin_payload(normalized)
 
 
 def map_douyin_event(payload: dict[str, Any]) -> RoomEvent | None:

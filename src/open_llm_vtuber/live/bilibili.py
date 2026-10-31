@@ -62,6 +62,9 @@ def map_bilibili_official_message(
         "user": RoomUser(id=user_id, name=user_name or "unknown"),
     }
 
+    if cmd == "LIVE_OPEN_PLATFORM_LIVE_ROOM_ENTER":
+        return RoomEvent(type="join", **base)
+
     if cmd == "LIVE_OPEN_PLATFORM_DM":
         content = str(data.get("msg") or "")
         if not content:

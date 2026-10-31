@@ -29,6 +29,7 @@ class LiveDirector:
         "operator": 100,
         "gift": 70,
         "chat": 40,
+        "join": 30,
         "proactive": 10,
     }
 

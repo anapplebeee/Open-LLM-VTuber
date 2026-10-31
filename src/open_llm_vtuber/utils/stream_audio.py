@@ -79,6 +79,10 @@ def prepare_audio_payload(
     """
     if isinstance(display_text, DisplayText):
         display_text = display_text.to_dict()
+    action_payload = actions.to_dict() if actions else None
+    # Current OLV frontend reads expressions from the top-level audio payload
+    # while the backend historically exposed only the Actions object.
+    expressions = action_payload.get("expressions") if action_payload else None
 
     if not audio_path:
         # Return payload for silent display
@@ -88,7 +92,8 @@ def prepare_audio_payload(
             "volumes": [],
             "slice_length": chunk_length_ms,
             "display_text": display_text,
-            "actions": actions.to_dict() if actions else None,
+            "actions": action_payload,
+            "expressions": expressions,
             "forwarded": forwarded,
         }
 
@@ -108,7 +113,8 @@ def prepare_audio_payload(
         "volumes": volumes,
         "slice_length": chunk_length_ms,
         "display_text": display_text,
-        "actions": actions.to_dict() if actions else None,
+        "actions": action_payload,
+        "expressions": expressions,
         "forwarded": forwarded,
     }
 

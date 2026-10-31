@@ -286,6 +286,25 @@ def fallback_for_input(text: str) -> str | None:
     return None
 
 
+def emotion_hint_for_text(text: str) -> str:
+    """Choose a visible expression when the model omitted an emotion tag."""
+    clean = (text or "").lower()
+    if re.search(
+        r"你好|您好|嗨|早上好|晚上好|开心|高兴|喜欢|谢谢|哈哈|太棒|可爱|好呀",
+        clean,
+    ):
+        return "joy"
+    if re.search(r"生气|愤怒|火大|讨厌|烦死", clean):
+        return "anger"
+    if re.search(r"害羞|脸红|不好意思|娇羞", clean):
+        return "smirk"
+    if re.search(r"难过|伤心|想哭|安慰|抱歉|对不起|遗憾", clean):
+        return "sadness"
+    if re.search(r"惊讶|真的吗|居然|没想到|？|\?", clean):
+        return "surprise"
+    return "neutral"
+
+
 def fit_to_budget(speech: str, budget: int) -> str:
     """Keep whole sentences up to the budget, but never pass a runaway line."""
     text = re.sub(r"\s*\n+\s*", "", speech).strip()
@@ -363,6 +382,7 @@ __all__ = [
     "STREAMER_FALLBACK",
     "LiveInteractionPolicy",
     "PolicyDecision",
+    "emotion_hint_for_text",
     "extract_kaomoji_emotion",
     "fallback_for_input",
     "fallback_for_text",

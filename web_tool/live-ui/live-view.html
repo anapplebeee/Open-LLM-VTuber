@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Open-LLM-Vtuber Live View</title>
+    <script>
+      // This page is read-only: it receives the live session's audio/Live2D
+      // output from /live-view-ws. The event producer owns /live-ws.
+      localStorage.setItem(
+        "wsUrl",
+        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live-view-ws`
+      );
+      localStorage.setItem("baseUrl", location.origin);
+    </script>
+    <script src="./effects.js?v=11"></script>
+    <script type="module" crossorigin src="./assets/main-CKgUHFa9.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/main-QEkl09-0.css" />
+    <style>
+      html, body { background: transparent !important; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

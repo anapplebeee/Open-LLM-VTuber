@@ -18,6 +18,8 @@ class GPTSoVITSTest(unittest.TestCase):
             ref_audio_path="referenceAudio/xiaoyi_ref.wav",
             prompt_text="参考文本",
             streaming_mode=0,
+            speed_factor=0.85,
+            temperature=0.7,
         )
         fake_response = type(
             "Response",
@@ -28,15 +30,18 @@ class GPTSoVITSTest(unittest.TestCase):
             "src.open_llm_vtuber.tts.gpt_sovits_tts.requests.get",
             return_value=fake_response,
         ) as request:
-            output = engine.generate_audio("你好", "gpt-sovits-test")
+            output = engine.generate_audio("[smirk]你好", "gpt-sovits-test")
         try:
             self.assertIsNotNone(output)
             self.assertEqual(Path(output).read_bytes(), b"RIFF-test-audio")
             params = request.call_args.kwargs["params"]
             self.assertEqual(params["text"], "你好")
+            self.assertNotIn("[smirk]", params["text"])
             self.assertEqual(params["ref_audio_path"], "referenceAudio/xiaoyi_ref.wav")
             self.assertEqual(params["prompt_text"], "参考文本")
             self.assertEqual(params["streaming_mode"], 0)
+            self.assertEqual(params["speed_factor"], 0.85)
+            self.assertEqual(params["temperature"], 0.7)
             self.assertEqual(request.call_args.kwargs["timeout"], (10, 120))
         finally:
             if output:

@@ -15,8 +15,15 @@ from .conversation_utils import (
 )
 from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
+from .song_command import (
+    handle_song_command,
+    queue_snapshot,
+    resolve_song,
+    song_payload,
+)
 from ..chat_history_manager import store_message
 from ..service_context import ServiceContext
+from ..live.songbook import SongRequestQueue, detect_song_control
 
 # Import necessary types from agent outputs
 from ..agent.output_types import SentenceOutput, AudioOutput
@@ -58,6 +65,52 @@ async def process_single_conversation(
         input_text = await process_user_input(
             user_input, context.asr_engine, websocket_send
         )
+
+        reply_text = (input_text or "").strip()
+        song_result = None
+        if reply_text:
+            control_action = detect_song_control(reply_text)
+            if control_action is not None:
+                await websocket_send(
+                    json.dumps(
+                        {"type": "song-control", "action": control_action},
+                        ensure_ascii=False,
+                    )
+                )
+            await websocket_send(
+                json.dumps(
+                    {"type": "reply-context", "text": reply_text[:80]},
+                    ensure_ascii=False,
+                )
+            )
+            song_result = handle_song_command(
+                client_uid,
+                reply_text,
+                context.character_config.human_name,
+            )
+            if song_result is not None:
+                input_text = (
+                    f"{reply_text}\n{SongRequestQueue.prompt_note(song_result)}"
+                )
+                await websocket_send(
+                    json.dumps(
+                        {
+                            "type": "song-queue",
+                            **queue_snapshot(client_uid),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                try:
+                    song = await asyncio.wait_for(
+                        resolve_song(song_result), timeout=15
+                    )
+                    if song is not None:
+                        await websocket_send(
+                            json.dumps(song_payload(song, song_result))
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning("Song resolution timed out; continuing without playback")
 
         # Create batch input
         batch_input = create_batch_input(

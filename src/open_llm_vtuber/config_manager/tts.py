@@ -286,6 +286,8 @@ class GPTSoVITSConfig(I18nMixin):
     prompt_text: str = Field("", alias="prompt_text")
     text_split_method: str = Field("cut5", alias="text_split_method")
     batch_size: int = Field(1, alias="batch_size")
+    speed_factor: float = Field(1.0, alias="speed_factor")
+    temperature: float = Field(1.0, alias="temperature")
     media_type: str = Field("wav", alias="media_type")
     streaming_mode: int = Field(0, alias="streaming_mode")
     timeout: int = Field(120, alias="timeout")
@@ -304,6 +306,14 @@ class GPTSoVITSConfig(I18nMixin):
             en="Method for splitting text", zh="文本分割方法"
         ),
         "batch_size": Description(en="Batch size for processing", zh="处理批次大小"),
+        "speed_factor": Description(
+            en="Speech speed factor (1.0 normal, lower is slower)",
+            zh="语速倍率（1.0 正常，越低越慢）",
+        ),
+        "temperature": Description(
+            en="Sampling temperature; lower values are more stable and less sharp",
+            zh="采样温度；越低越稳定、起伏越小",
+        ),
         "media_type": Description(en="Output media type", zh="输出媒体类型"),
         "streaming_mode": Description(
             en="api_v2 streaming mode (OLV file output uses 0)",

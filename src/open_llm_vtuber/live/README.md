@@ -26,6 +26,10 @@ It is deliberately not a second VTuber process.
   `LiveReActPlanner` (speak/silent decision) from `LiveReplyer` (one short
   spoken line), then delegates sentence splitting, TTS filtering and Live2D
   action extraction to OLV's existing pipeline.
+- `SongRequestQueue`: bounded in-session point-song queue for live chat:
+  `点歌 歌名`, `点歌列表`, `取消点歌 歌名`. It enforces a per-user cooldown,
+  per-user and total limits, duplicate rejection, link/path rejection, and
+  appends a short system note before the event reaches the live planner.
 - `LiveReActPlanner`: bounded JSON decision loop; supports one bounded session
   recap recall step, not arbitrary tool execution.
 - `SessionRecapWriter`: writes a factual recap after a session ends, with a
@@ -50,9 +54,15 @@ Bilibili collector -> RoomEvent -> LiveDirector -> LiveBatch
 `/live-ws` is registered by `server.py` and requires
 `conversation_agent_choice: live_streamer_agent`. It accepts normalized
 `RoomEvent` (`{"type": "room-event", "event": {...}}`), a normalized Bilibili
-payload (`{"type": "bilibili-event", "payload": {...}}`), or starts the official
-collector with `{"type": "bilibili-start", "config": {...}}`. Outputs use the
-same OLV browser TTS/Live2D path.
+payload (`{"type": "bilibili-event", "payload": {...}}`), a dyhub/normalized
+Douyin payload (`{"type": "douyin-event", "payload": {...}}`), or starts the
+official Bilibili collector with `{"type": "bilibili-start", "config": {...}}`.
+Outputs use the same OLV browser TTS/Live2D path.
+
+`LiveOutputHub` fans live output out to read-only `/live-view-ws` viewers, so a
+collector that submits events is not forced to be the browser that plays audio:
+`dyhub -> scripts/dyhub_bridge.py -> /live-ws -> /live-view-ws`. The bridge is
+I/O-only and does not start a second agent, TTS, or audio owner.
 
 The `bilibili-start` route is local-only and should be protected by the same
 network boundary as `/client-ws`; credentials are not persisted by this route.
@@ -81,6 +91,47 @@ Proactive speech is disabled by default and uses the same LiveStreamerAgent,
 TTS and Live2D pipeline. It is not a second process or a second audio owner.
 The live status also exposes `emotion`, `memories` and `context_trace` for
 debugging the current state and context budget.
+
+## Song requests
+
+Every live chat event is checked by `SongRequestQueue` before batching:
+
+```text
+点歌 海底
+点歌 周杰伦 - 晴天
+点歌列表
+取消点歌 海底
+```
+
+Limits: 45s per-user cooldown, 3 concurrent requests per user, 8 total queue
+slots. URLs, file paths, duplicate titles and overlong titles are rejected.
+The bot receives the original chat plus a bounded `【点歌系统】` note and is
+expected to acknowledge the queue position in one short spoken line.
+
+`LiveSession.status()["song_requests"]` exposes the current queue:
+
+```json
+{"items":[{"id":"...","title":"海底","user":"观众名","position":1}],"max_size":8}
+```
+
+The queue is connected to `NeteaseSongProvider`, which reads the local
+`neteasecli` session. Search uses the authenticated web API; the stream URL is
+obtained through the local `neteasecli` weapi helper. The URL is emitted as a
+`{"type":"song","action":"play"}` event, and `/song-audio` proxies the CDN with
+the required headers so the browser can play it without an external player.
+
+```text
+点歌 -> search -> neteasecli URL -> /song-audio proxy -> browser audio
+```
+
+`frontend/effects.js` pauses the acknowledgement TTS, plays the song, shows a
+now-playing chip, and renders the live playlist from `song-queue` events. The
+browser audio fallback does not need `mpv`.
+
+The authorized session file lives at
+`~/.config/neteasecli/profiles/default/session.json`; do not commit it. A
+dedicated MCP resolver can replace `NeteaseSongProvider.resolve()` later without
+changing the queue or frontend contract.
 
 ## Choosing the agent
 

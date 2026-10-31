@@ -27,6 +27,8 @@ from .memory import MemoryManager
 from .notebook import LiveNotebook
 from .proactive import ProactiveScheduler
 from .rundown import RundownState
+from .song_player import NeteaseSongProvider
+from .songbook import SongRequestQueue, detect_song_control
 from .state import EmotionEngine, EmotionState, StreamState, ViewerRegistry
 from .store import LiveStore
 
@@ -45,6 +47,9 @@ class LiveSession:
         rundown: RundownState | None = None,
         session_id: str | None = None,
         on_batch_end: Callable[[], Awaitable[None]] | None = None,
+        on_song: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_reply: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        song_provider: NeteaseSongProvider | None = None,
         store: LiveStore | None = None,
         recap_writer: Any = None,
         proactive: ProactiveScheduler | None = None,
@@ -61,6 +66,12 @@ class LiveSession:
         self.agent = agent
         self.on_output = on_output
         self.on_batch_end = on_batch_end
+        self.on_song = on_song
+        self.on_reply = on_reply
+        self.song_provider = song_provider or NeteaseSongProvider()
+        self._pending_song_result: Any = None
+        self._pending_song_control: str | None = None
+        self._song_tasks: set[asyncio.Task[None]] = set()
         self.rundown = rundown
         if self.rundown is not None and hasattr(self.agent, "_rundown_state"):
             self.agent._rundown_state = self.rundown
@@ -68,6 +79,7 @@ class LiveSession:
         self.recap_writer = recap_writer
         self.proactive = proactive or ProactiveScheduler()
         self.notebook = notebook or LiveNotebook()
+        self.song_requests = SongRequestQueue()
         self.profile = profile or XIAOJING_PROFILE
         self.emotion_engine = emotion_engine or EmotionEngine()
         self.emotion_state = EmotionState()
@@ -130,6 +142,11 @@ class LiveSession:
         if self._bilibili_collector:
             await self._bilibili_collector.stop()
             self._bilibili_collector = None
+        for task in list(self._song_tasks):
+            task.cancel()
+        if self._song_tasks:
+            await asyncio.gather(*self._song_tasks, return_exceptions=True)
+            self._song_tasks.clear()
         await self.director.stop()
         if self.on_close:
             try:
@@ -240,7 +257,90 @@ class LiveSession:
     def ingest(self, event: RoomEvent) -> bool:
         if not self._running:
             return False
-        return self.director.ingest(event)
+        accepted = self.director.ingest(self._with_song_request(event))
+        if accepted:
+            self._dispatch_pending_song()
+        else:
+            self._pending_song_result = None
+        return accepted
+
+    def _with_song_request(self, event: RoomEvent) -> RoomEvent:
+        """Handle point-song commands before the LLM planner sees the event."""
+        self._pending_song_result = None
+        self._pending_song_control = None
+        if event.type == "chat":
+            control = detect_song_control(event.content or "")
+            if control is not None:
+                self._pending_song_control = control
+                return event
+        if event.type == "join":
+            name = event.user.name
+            note = (
+                f"【进入直播间】观众名：{name}。"
+                f"请先用“欢迎{name}进入直播间”这句话开头，"
+                "再用一句自然短话轻轻点评一下用户名。"
+                "不要只点评名字而漏掉欢迎语；若用户名不适合点评，"
+                "就只保留欢迎语。不要编造认识对方，不要念出方括号或系统标签。"
+            )
+            content = f"{event.content}\n{note}".strip()
+            return event.model_copy(update={"content": content[:500]})
+        result = self.song_requests.handle(event, now_ms=self._now_ms())
+        if result is None:
+            return event
+        self._pending_song_result = result
+        note = SongRequestQueue.prompt_note(result)
+        content = f"{event.content}\n{note}".strip()
+        return event.model_copy(update={"content": content[:500]})
+
+    def _dispatch_pending_song(self) -> None:
+        control = self._pending_song_control
+        self._pending_song_control = None
+        result = self._pending_song_result
+        self._pending_song_result = None
+        if self.on_song is None:
+            return
+        if control is not None:
+            control_task = asyncio.create_task(
+                self.on_song({"type": "song-control", "action": control}),
+                name="live-song-control",
+            )
+            self._song_tasks.add(control_task)
+            control_task.add_done_callback(self._song_tasks.discard)
+        if result is None:
+            return
+        queue_task = asyncio.create_task(
+            self.on_song({"type": "song-queue", **self.song_requests.snapshot()}),
+            name="live-song-queue",
+        )
+        self._song_tasks.add(queue_task)
+        queue_task.add_done_callback(self._song_tasks.discard)
+        if result.action != "queued" or result.entry is None:
+            return
+        task = asyncio.create_task(
+            self._play_song(result.entry.title),
+            name=f"live-song-{result.entry.id}",
+        )
+        self._song_tasks.add(task)
+        task.add_done_callback(self._song_tasks.discard)
+
+    async def _play_song(self, title: str) -> None:
+        try:
+            song = await self.song_provider.resolve(title)
+            if song is None:
+                logger.warning("No playable NetEase result for: {}", title)
+                return
+            payload = {
+                "type": "song",
+                "action": "play",
+                "track_id": song.track_id,
+                "title": song.title,
+                "artist": song.artist,
+                "url": song.url,
+                "duration_ms": song.duration_ms,
+            }
+            await self.on_song(payload)
+        except Exception:
+            logger.exception("Song playback dispatch failed for: {}", title)
 
     def ingest_bilibili(self, payload: dict[str, Any]) -> bool:
         if not self._running:
@@ -248,7 +348,12 @@ class LiveSession:
         event = map_bilibili_payload(payload)
         if event is None:
             return False
-        return self.director.ingest(event)
+        accepted = self.director.ingest(self._with_song_request(event))
+        if accepted:
+            self._dispatch_pending_song()
+        else:
+            self._pending_song_result = None
+        return accepted
 
     def ingest_douyin(self, payload: dict[str, Any]) -> bool:
         if not self._running:
@@ -256,7 +361,12 @@ class LiveSession:
         event = map_douyin_payload(payload)
         if event is None:
             return False
-        return self.director.ingest(event)
+        accepted = self.director.ingest(self._with_song_request(event))
+        if accepted:
+            self._dispatch_pending_song()
+        else:
+            self._pending_song_result = None
+        return accepted
 
     async def start_bilibili(self, config: Any) -> None:
         """Start the official collector and feed its events into this session."""
@@ -287,6 +397,11 @@ class LiveSession:
             "rundown": self.rundown.snapshot() if self.rundown else None,
             "proactive": self.proactive.snapshot(),
             "notebook_chars": len(self.notebook.read()),
+            "song_requests": self.song_requests.snapshot(),
+            "song_playback": {
+                "enabled": self.song_provider.enabled and self.on_song is not None,
+                "active": len(self._song_tasks),
+            },
             "emotion": {
                 "label": self.emotion_state.label,
                 "intensity": self.emotion_state.intensity,
@@ -374,6 +489,32 @@ class LiveSession:
                     notebook=self.notebook.read(),
                     context_packet=self._last_context,
                 )
+            if self.on_reply is not None:
+                reply_event = next(
+                    (
+                        item
+                        for item in reversed(batch.events)
+                        if item.type in {"chat", "gift", "operator", "join"}
+                    ),
+                    None,
+                )
+                if reply_event is not None:
+                    text = reply_event.content.strip()
+                    if not text and reply_event.gift is not None:
+                        text = f"送出 {reply_event.gift.name} ×{reply_event.gift.count}"
+                    if not text and reply_event.type == "join":
+                        text = "进入了直播间"
+                    if text:
+                        try:
+                            await self.on_reply(
+                                {
+                                    "type": "reply-context",
+                                    "text": f"{reply_event.user.name}：{text[:80]}",
+                                }
+                            )
+                        except Exception:  # noqa: BLE001 - UI event must not stop live
+                            logger.debug("Live reply-context send failed")
+
             assistant_parts: list[str] = []
             async for output in self.agent.chat(make_live_batch_input(batch)):
                 display = getattr(output, "display_text", None)

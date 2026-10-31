@@ -13,6 +13,7 @@ from ..agent.stateless_llm.stateless_llm_interface import StatelessLLMInterface
 from .events import LiveBatch
 from .personality import (
     RESPONSE_POLICY,
+    emotion_hint_for_text,
     fallback_for_input,
     fallback_for_text,
     sanitize_live_reply,
@@ -86,6 +87,10 @@ class LiveReplyer:
             raise RuntimeError("live replyer returned empty or unsafe speech")
         hint = emotion_hint if normalize_emotion_tag(emotion_hint) != "neutral" else decision.emotion
         tag = normalize_emotion_tag(hint)
+        if tag == "neutral":
+            tag = normalize_emotion_tag(
+                emotion_hint_for_text(f"{request_text} {text}")
+            )
         if tag != "neutral" and not text.lower().startswith(f"[{tag}]"):
             text = f"[{tag}]{text}"
         return text

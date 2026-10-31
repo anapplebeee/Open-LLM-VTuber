@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.open_llm_vtuber.live.douyin import map_douyin_payload
+from src.open_llm_vtuber.live.douyin import map_douyin_payload, map_dyhub_event
 
 
 class DouyinAdapterTest(unittest.TestCase):
@@ -43,6 +43,37 @@ class DouyinAdapterTest(unittest.TestCase):
     def test_like_and_enter_are_not_speech_events(self):
         self.assertIsNone(map_douyin_payload({"method": "WebcastLikeMessage"}))
         self.assertIsNone(map_douyin_payload({"method": "WebcastRoomUserSeqMessage"}))
+
+    def test_dyhub_chat_and_gift_are_mapped(self):
+        chat = map_dyhub_event(
+            {
+                "id": "evt-1",
+                "roomId": "room-1",
+                "type": "chat",
+                "user": {"id": "u1", "nickname": "小鱼"},
+                "data": {"content": "主播你好"},
+            }
+        )
+        self.assertIsNotNone(chat)
+        assert chat is not None
+        self.assertEqual(chat.platform, "douyin")
+        self.assertEqual(chat.content, "主播你好")
+        self.assertEqual(chat.room_id, "room-1")
+
+        gift = map_dyhub_event(
+            {
+                "id": "evt-2",
+                "roomId": "room-1",
+                "type": "gift",
+                "user": {"id": "u2", "nickname": "小蓝"},
+                "data": {"giftName": "小心心", "repeatCount": 3},
+            }
+        )
+        self.assertIsNotNone(gift)
+        assert gift is not None
+        self.assertEqual(gift.gift.name, "小心心")  # type: ignore[union-attr]
+        self.assertEqual(gift.gift.count, 3)  # type: ignore[union-attr]
+        self.assertIsNone(map_dyhub_event({"type": "member", "data": {}}))
 
 
 if __name__ == "__main__":

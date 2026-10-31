@@ -1,16 +1,21 @@
-import os
 import json
-from uuid import uuid4
-import numpy as np
+import os
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, UploadFile, File, Response
-from starlette.responses import JSONResponse
-from starlette.websockets import WebSocketDisconnect
+from uuid import uuid4
+
+import numpy as np
+import requests
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, WebSocket
 from loguru import logger
+from starlette.responses import JSONResponse, StreamingResponse
+from starlette.websockets import WebSocketDisconnect
+from urllib.parse import urlparse
+
 from .agent.agents.live_streamer_agent import LiveStreamerAgent
 from .live.events import RoomEvent
 from .live.memory import MemoryManager, MemoryStore
 from .live.output import LiveBrowserOutput
+from .live.output_hub import LiveOutputHub
 from .live.recap import SessionRecapWriter
 from .live.runtime import LiveSession
 from .live.store import LiveStore
@@ -49,6 +54,55 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             await ws_handler.handle_disconnect(client_uid)
             raise
 
+    @router.get("/song-audio")
+    async def song_audio(url: str, request: Request):
+        """Proxy NetEase CDN audio with a stable Referer for browser playback."""
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        allowed = host.endswith(".music.126.net") or host.endswith(".music.163.com")
+        if parsed.scheme not in {"http", "https"} or not allowed:
+            raise HTTPException(status_code=400, detail="unsupported song URL")
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+            ),
+            "Referer": "https://music.163.com/",
+        }
+        range_header = request.headers.get("range")
+        if range_header:
+            headers["Range"] = range_header
+        try:
+            upstream = requests.get(
+                url, headers=headers, stream=True, timeout=(5, 20), verify=False
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail="song upstream unavailable") from exc
+        if upstream.status_code not in (200, 206):
+            upstream.close()
+            raise HTTPException(status_code=502, detail="song upstream rejected")
+
+        response_headers = {"Accept-Ranges": upstream.headers.get("accept-ranges", "bytes")}
+        for key in ("content-range", "content-length"):
+            if upstream.headers.get(key):
+                response_headers[key.title()] = upstream.headers[key]
+
+        def chunks():
+            try:
+                for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                upstream.close()
+
+        return StreamingResponse(
+            chunks(),
+            status_code=upstream.status_code,
+            media_type=upstream.headers.get("content-type", "audio/mpeg"),
+            headers=response_headers,
+        )
+
     return router
 
 
@@ -65,6 +119,22 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
     live_active = False
     live_store = LiveStore()
     live_memory = MemoryManager(MemoryStore("data/xiaojing-memory.db"))
+    live_output_hub = LiveOutputHub()
+
+    async def send_live_view_config(websocket: WebSocket) -> None:
+        """Bootstrap a read-only Live2D viewer with the model configuration."""
+        context = default_context_cache
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "set-model-and-conf",
+                    "model_info": context.live2d_model.model_info,
+                    "conf_name": context.character_config.character_name,
+                    "conf_uid": context.character_config.conf_uid,
+                    "client_uid": str(uuid4()),
+                }
+            )
+        )
 
     @router.websocket("/live-ws")
     async def live_websocket_endpoint(websocket: WebSocket):
@@ -107,6 +177,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             websocket.send_text,
             store=live_store,
             session_id=session_id,
+            broadcast_send=live_output_hub.broadcast,
         )
         recap_writer = SessionRecapWriter(
             live_store,
@@ -115,6 +186,8 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
         session = LiveSession(
             agent=context.agent_engine,
             on_output=output.send,
+            on_song=output.send_event,
+            on_reply=output.send_event,
             on_batch_end=output.end_batch,
             on_close=output.close,
             session_id=session_id,
@@ -125,7 +198,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
         try:
             try:
                 await session.start()
-            except Exception as exc:  # noqa: BLE001 - report start failure
+            except Exception as exc:
                 await websocket.send_text(
                     json.dumps({"type": "error", "message": f"live start failed: {exc}"})
                 )
@@ -285,6 +358,36 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             finally:
                 live_active = False
 
+    @router.websocket("/live-view-ws")
+    async def live_view_websocket_endpoint(websocket: WebSocket):
+        """Read-only browser viewer for live audio/Live2D output.
+
+        The dyhub bridge or another event producer connects to ``/live-ws``;
+        this socket only receives output and never submits live events.
+        """
+        await websocket.accept()
+        await send_live_view_config(websocket)
+        await live_output_hub.register(websocket)
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    message = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(message, dict):
+                    continue
+                if message.get("type") == "heartbeat":
+                    await websocket.send_text(
+                        json.dumps({"type": "heartbeat-ack"})
+                    )
+                elif message.get("type") == "request-init-config":
+                    await send_live_view_config(websocket)
+        except WebSocketDisconnect:
+            logger.info("Live view WebSocket disconnected")
+        finally:
+            await live_output_hub.unregister(websocket)
+
     return router
 
 
@@ -411,7 +514,7 @@ def init_webtool_routes(default_context_cache: ServiceContext) -> APIRouter:
                 )
             except ValueError as e:
                 raise ValueError(
-                    f"Audio format error: {str(e)}. Please ensure the file is 16-bit PCM WAV format."
+                    f"Audio format error: {e!s}. Please ensure the file is 16-bit PCM WAV format."
                 )
 
             # Validate audio data

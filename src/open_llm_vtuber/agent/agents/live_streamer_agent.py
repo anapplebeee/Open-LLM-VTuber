@@ -20,6 +20,7 @@ from ...live.events import LiveBatch
 from ...live.personality import (
     RESPONSE_POLICY,
     LiveInteractionPolicy,
+    emotion_hint_for_text,
     fallback_for_input,
     fallback_for_text,
     sanitize_live_reply,
@@ -144,9 +145,14 @@ class LiveStreamerAgent(BasicMemoryAgent):
                     if (
                         self._live2d_model is not None
                         and getattr(output, "actions", None) is not None
-                        and not output.actions.expressions
                     ):
                         expressions = self._live2d_model.extract_emotion(cleaned)
+                        if not expressions or expressions == ["relax"]:
+                            hint = emotion_hint_for_text(request_text)
+                            if hint != "neutral":
+                                expressions = self._live2d_model.extract_emotion(
+                                    f"[{hint}]"
+                                )
                         if expressions:
                             output.actions.expressions = expressions
                     self._recent_spoken.append(cleaned)

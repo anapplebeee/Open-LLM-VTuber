@@ -10,6 +10,7 @@ from src.open_llm_vtuber.live.personality import (
     GREETING_FALLBACK,
     STREAMER_FALLBACK,
     LiveInteractionPolicy,
+    emotion_hint_for_text,
     fallback_for_text,
     fit_to_budget,
     is_generic_assistant_boilerplate,
@@ -149,6 +150,8 @@ class LiveReplySanitizerTest(unittest.TestCase):
         self.assertEqual(sanitize_live_reply("真的吗 😊"), "[joy]真的吗。")
         self.assertEqual(sanitize_live_reply("这是（认真）的"), "这是（认真）的。")
         self.assertEqual(sanitize_live_reply("可爱 (๑•̀ㅂ•́)و✧"), "[joy]可爱。")
+        self.assertEqual(emotion_hint_for_text("我很生气"), "anger")
+        self.assertEqual(emotion_hint_for_text("有点害羞"), "smirk")
         self.assertTrue(sanitize_live_reply("小鲸来啦🐳").endswith("🐳"))
 
     def test_generic_assistant_boilerplate_is_rejected(self):

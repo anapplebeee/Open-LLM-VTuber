@@ -39,6 +39,7 @@ class AsyncLLM(StatelessLLMInterface):
         project_id: str = "z",
         temperature: float = 1.0,
         stream: bool = True,
+        reasoning_effort: str | None = None,
     ):
         """
         Initializes an instance of the `AsyncLLM` class.
@@ -55,6 +56,7 @@ class AsyncLLM(StatelessLLMInterface):
         self.model = model
         self.temperature = temperature
         self.stream = stream
+        self.reasoning_effort = reasoning_effort
         # A local gateway must not be routed through a machine-wide HTTP proxy.
         # Keep the default httpx proxy behavior for remote OpenAI endpoints.
         local_http_client = (
@@ -125,6 +127,11 @@ class AsyncLLM(StatelessLLMInterface):
                     stream=False,
                     temperature=self.temperature,
                     tools=available_tools,
+                    extra_body=(
+                        {"reasoning_effort": self.reasoning_effort}
+                        if self.reasoning_effort
+                        else None
+                    ),
                 )
                 content = response.choices[0].message.content
                 if content:
@@ -139,6 +146,11 @@ class AsyncLLM(StatelessLLMInterface):
                 stream=True,
                 temperature=self.temperature,
                 tools=available_tools,
+                extra_body=(
+                    {"reasoning_effort": self.reasoning_effort}
+                    if self.reasoning_effort
+                    else None
+                ),
             )
             logger.debug(
                 f"Tool Support: {self.support_tools}, Available tools: {available_tools}"
