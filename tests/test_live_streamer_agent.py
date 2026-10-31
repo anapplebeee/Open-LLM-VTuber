@@ -53,6 +53,39 @@ class LiveStreamerWrapperTest(unittest.IsolatedAsyncioTestCase):
         outputs = [item async for item in agent.chat(request)]
         self.assertEqual([item.display_text.text for item in outputs], ["第一句。", "第二句！"])
 
+    async def test_kaomoji_is_converted_and_action_is_mirrored(self):
+        async def fake_base(_input_data):
+            yield _output("好开心 (≧▽≦)")
+
+        class FakeLive2D:
+            @staticmethod
+            def extract_emotion(text):
+                return ["happy"] if "[joy]" in text else []
+
+        def fake_init(self, **_kwargs):
+            self._system = ""
+            self._memory = []
+            self._llm = object()
+            self._tts_preprocessor_config = None
+            self._live2d_model = FakeLive2D()
+            self._faster_first_response = True
+            self._segment_method = "pysbd"
+            self.chat = fake_base
+
+        with patch.object(BasicMemoryAgent, "__init__", fake_init), patch.object(
+            BasicMemoryAgent, "set_system", lambda _self, _system: None
+        ):
+            agent = LiveStreamerAgent()
+
+        request = BatchInput(
+            texts=[TextData(source=TextSource.INPUT, content="测试颜文字")],
+            images=None,
+            files=None,
+        )
+        outputs = [item async for item in agent.chat(request)]
+        self.assertEqual(outputs[0].display_text.text, "[joy]好开心。")
+        self.assertEqual(outputs[0].actions.expressions, ["happy"])
+
     async def test_identity_claim_is_replaced_once_and_followup_is_suppressed(self):
         async def fake_base(_input_data):
             yield _output("我是 DeepSeek，")
@@ -81,6 +114,36 @@ class LiveStreamerWrapperTest(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [item async for item in agent.chat(request)]
         self.assertEqual([item.display_text.text for item in outputs], ["我是小鲸，一只蓝鲸娘。"])
+
+    async def test_generic_capability_list_gets_a_short_host_fallback(self):
+        async def fake_base(_input_data):
+            yield _output("我能做这些事：对话问答、写作与改写、文档处理。")
+
+        def fake_init(self, **_kwargs):
+            self._system = ""
+            self._memory = []
+            self._llm = object()
+            self._tts_preprocessor_config = None
+            self._live2d_model = None
+            self._faster_first_response = True
+            self._segment_method = "pysbd"
+            self.chat = fake_base
+
+        with patch.object(BasicMemoryAgent, "__init__", fake_init), patch.object(
+            BasicMemoryAgent, "set_system", lambda _self, _system: None
+        ):
+            agent = LiveStreamerAgent()
+
+        request = BatchInput(
+            texts=[TextData(source=TextSource.INPUT, content="你能做什么")],
+            images=None,
+            files=None,
+        )
+        outputs = [item async for item in agent.chat(request)]
+        self.assertEqual(
+            [item.display_text.text for item in outputs],
+            ["我会陪你聊天，也会讲直播里发生的事。"],
+        )
 
     async def test_live_batch_reaches_planner_and_replyer(self):
         calls = []

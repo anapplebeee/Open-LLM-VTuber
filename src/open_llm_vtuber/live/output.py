@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from typing import Any
 
 from ..agent.output_types import AudioOutput, SentenceOutput
@@ -39,7 +38,7 @@ class LiveBrowserOutput:
 
     async def send(self, output: Any) -> None:
         if isinstance(output, (SentenceOutput, AudioOutput)):
-            text = await process_agent_output(
+            await process_agent_output(
                 output=output,
                 character_config=self.context.character_config,
                 live2d_model=self.context.live2d_model,
@@ -48,17 +47,19 @@ class LiveBrowserOutput:
                 tts_manager=self.tts_manager,
                 translate_engine=self.context.translate_engine,
             )
-            if self.store and self.session_id and text:
-                await asyncio.to_thread(
-                    self.store.append_chat,
-                    self.session_id,
-                    "assistant",
-                    text,
-                    int(time.time() * 1000),
-                )
+            # Dialogue persistence is owned by LiveSession._handle_batch,
+            # which writes one aggregate assistant row per batch. Writing here
+            # too would duplicate every sentence in live_chat.
         elif isinstance(output, dict) and output.get("type") == "tool_call_status":
             output["name"] = self.context.character_config.character_name
             await self.websocket_send(json.dumps(output))
+
+    def close(self) -> None:
+        """Cancel in-flight TTS tasks and the ordered sender on session close."""
+        for task in self.tts_manager.task_list:
+            if not task.done():
+                task.cancel()
+        self.tts_manager.clear()
 
     async def end_batch(self) -> None:
         had_tasks = bool(self.tts_manager.task_list)

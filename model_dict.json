@@ -26,5 +26,27 @@
                 "": 1
             }
         }
+    },
+    {
+        "name": "deepseek",
+        "description": "DeepSeek 大肥鱼 community Live2D (MIT-declared source)",
+        "url": "/live2d-models/deepseek/deepseek.model3.json?v=20261031b",
+        "kScale": 0.5,
+        "initialXshift": 0,
+        "initialYshift": 0,
+        "kXOffset": 0,
+        "idleMotionGroupName": "Idle",
+        "emotionMap": {
+            "neutral": "relax",
+            "joy": "happy",
+            "smirk": "happy2",
+            "fear": "puzzled",
+            "surprise": "surprised",
+            "sadness": "sad",
+            "anger": "anger",
+            "disgust": "unhappy"
+        },
+        "tapMotions": {},
+        "defaultEmotion": "relax"
     }
 ]

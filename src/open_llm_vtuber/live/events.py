@@ -7,11 +7,23 @@ live agent converts a selected batch into an OLV BatchInput.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from json import dumps
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# C0/C1 controls, bidi overrides and zero-width characters can spoof prompt
+# labels or scramble the untrusted JSON block. They are never needed in live
+# event text, names or IDs.
+_CONTROL_CHARS = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]"
+)
+
+
+def _clean_text(value: Any) -> Any:
+    return _CONTROL_CHARS.sub("", value).strip() if isinstance(value, str) else value
 
 
 class RoomUser(BaseModel):
@@ -22,6 +34,8 @@ class RoomUser(BaseModel):
     id: str = Field(default="", max_length=100)
     name: str = Field(min_length=1, max_length=60)
 
+    _clean_name = field_validator("name", mode="before")(classmethod(lambda cls, value: _clean_text(value)))
+
 
 class GiftInfo(BaseModel):
     """A gift fact. Amount is intentionally absent unless the platform supplies it."""
@@ -30,6 +44,8 @@ class GiftInfo(BaseModel):
 
     name: str = Field(min_length=1, max_length=60)
     count: int = Field(default=1, ge=1, le=10000)
+
+    _clean_gift_name = field_validator("name", mode="before")(classmethod(lambda cls, value: _clean_text(value)))
 
 
 class RoomEvent(BaseModel):
@@ -50,7 +66,7 @@ class RoomEvent(BaseModel):
     @field_validator("id", "platform", "content", mode="before")
     @classmethod
     def _strip_text(cls, value: Any) -> Any:
-        return value.strip() if isinstance(value, str) else value
+        return _clean_text(value)
 
     @field_validator("gift")
     @classmethod

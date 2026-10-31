@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+import uuid
+from pathlib import Path
+from unittest.mock import patch
 
 from src.open_llm_vtuber.config_manager.agent import AgentConfig
 from src.open_llm_vtuber.live.bilibili import map_bilibili_payload
 from src.open_llm_vtuber.live.director import LiveDirector
 from src.open_llm_vtuber.live.events import LiveBatch, RoomEvent
 from src.open_llm_vtuber.live.planner import RuleBasedLivePlanner
+from src.open_llm_vtuber.live.proactive import ProactiveScheduler
 from src.open_llm_vtuber.live.rundown import RundownState
 from src.open_llm_vtuber.live.runtime import LiveSession
+from src.open_llm_vtuber.live.store import LiveStore
 
 
 def event(event_id: str, event_type: str = "chat", text: str = "你好") -> RoomEvent:
@@ -39,6 +44,19 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
         await director.drain_once()
         self.assertEqual([item.id for item in batches[0].events], ["a", "b"])
 
+    async def test_full_queue_evicts_oldest_low_priority_item(self):
+        director = LiveDirector(window_ms=0, max_queue=2, now_ms=lambda: 1000)
+        batches: list[LiveBatch] = []
+        director._handler = lambda batch: _append(batches, batch)
+        self.assertTrue(director.ingest(event("chat-old")))
+        self.assertTrue(director.ingest(event("chat-new")))
+        self.assertTrue(director.ingest(event("gift-new", "gift")))
+        self.assertEqual(director.status()["queued"], 2)
+        await director.drain_once()
+        await director.drain_once()
+        self.assertEqual([batch.kind for batch in batches], ["gift", "chat"])
+        self.assertEqual([item.id for item in batches[1].events], ["chat-new"])
+
     async def test_director_task_dispatches_after_window_and_stops(self):
         batches: list[LiveBatch] = []
         director = LiveDirector(window_ms=10, now_ms=lambda: 1000)
@@ -54,15 +72,36 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
         await director.stop()
         self.assertFalse(director.status()["running"])
 
-    async def test_gift_is_not_mixed_into_chat_batch(self):
+    async def test_gift_is_not_mixed_and_precedes_a_queued_chat_backlog(self):
         director = LiveDirector(window_ms=0, now_ms=lambda: 1000)
         batches: list[LiveBatch] = []
         director._handler = lambda batch: _append(batches, batch)
         director.ingest(event("chat-1"))
+        director.ingest(event("chat-2"))
         director.ingest(event("gift-1", "gift"))
         await director.drain_once()
         await director.drain_once()
-        self.assertEqual([batch.kind for batch in batches], ["chat", "gift"])
+        self.assertEqual([batch.kind for batch in batches], ["gift", "chat"])
+        self.assertEqual([item.id for item in batches[1].events], ["chat-1", "chat-2"])
+
+    def test_live_session_loads_rundown_into_agent(self):
+        class FakeAgent:
+            _rundown_state = None
+
+        session = LiveSession(
+            agent=FakeAgent(),
+            on_output=_async_none,
+            session_id="rundown-test",
+        )
+        snapshot = session.load_rundown(
+            [{"id": "open", "title": "开场", "goal": "问候", "expected_ms": 1000}],
+            auto_begin=True,
+        )
+        self.assertEqual(snapshot["status"], "running")
+        self.assertIsNotNone(session.agent._rundown_state)
+        self.assertIn("开场", session.agent._rundown_state.context_text())
+        self.assertEqual(session.control_rundown("next")["index"], 0)
+        self.assertEqual(session.control_rundown("finish")["status"], "done")
 
     def test_rundown_tracks_progress_and_context(self):
         rundown = RundownState(
@@ -106,6 +145,80 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
         rundown.next()
         self.assertEqual(rundown.current().id, "talk")
 
+    def test_proactive_scheduler_resets_and_caps_consecutive_lines(self):
+        scheduler = ProactiveScheduler(
+            enabled=True, interval_ms=1000, max_consecutive=1
+        )
+        self.assertFalse(scheduler.due(1000))
+        self.assertTrue(scheduler.due(2000))
+        scheduler.mark_spoken(2000)
+        self.assertFalse(scheduler.due(3000))
+        scheduler.note_user_activity(4000)
+        self.assertTrue(scheduler.due(5000))
+
+    async def test_proactive_tick_emits_one_batch_when_rundown_is_running(self):
+        outputs: list[object] = []
+
+        class FakeAgent:
+            _rundown_state = None
+
+            async def chat(self, _input_data):
+                yield "proactive-output"
+
+        session = LiveSession(
+            agent=FakeAgent(),
+            on_output=lambda output: _append(outputs, output),
+            session_id="proactive-test",
+            rundown=RundownState(
+                [{"id": "open", "title": "开场", "goal": "问候", "expected_ms": 1000}]
+            ),
+            now_ms=lambda: 2000,
+        )
+        await session.start()
+        session.set_proactive(enabled=True, interval_ms=1000)
+        first = await session.proactive_tick(1000)
+        self.assertIsNone(first)
+        second = await session.proactive_tick(2000)
+        self.assertIsNotNone(second)
+        self.assertEqual(second.kind, "proactive")
+        self.assertEqual(outputs, ["proactive-output"])
+        await session.stop()
+
+    async def test_live_session_builds_context_and_updates_emotion(self):
+        class FakeAgent:
+            _rundown_state = None
+
+            def __init__(self):
+                self.context = None
+
+            def set_live_context(self, **kwargs):
+                self.context = kwargs
+
+            async def chat(self, _input_data):
+                yield "好呀。"
+
+        agent = FakeAgent()
+        session = LiveSession(
+            agent=agent,
+            on_output=lambda output: _append([], output),
+            session_id="context-test",
+            now_ms=lambda: 1000,
+        )
+        await session.start()
+        live_batch = LiveBatch(
+            id="context-batch",
+            kind="chat",
+            priority=40,
+            events=(event("context-event", text="谢谢你，真棒"),),
+        )
+        await session._handle_batch(live_batch)
+        self.assertIsNotNone(agent.context)
+        packet = agent.context["context_packet"]
+        self.assertIn("小鲸", packet.prompt_block())
+        self.assertEqual(packet.emotion.label, "joy")
+        self.assertEqual(session.status()["emotion"]["label"], "joy")
+        await session.stop()
+
     async def test_live_session_forwards_one_batch_to_agent_and_output(self):
         outputs: list[object] = []
         ended: list[bool] = []
@@ -128,6 +241,103 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outputs, ["SentenceOutput"])
         self.assertEqual(ended, [True])
         self.assertIn("live_batch", seen["metadata"])
+        await session.stop()
+
+    async def test_bilibili_collector_callback_is_awaited(self):
+        class FakeAgent:
+            _rundown_state = None
+
+            async def chat(self, _input_data):
+                if False:
+                    yield None
+
+        class FakeCollector:
+            instances = []
+
+            def __init__(self, config):
+                self.config = config
+                self.stopped = False
+                FakeCollector.instances.append(self)
+
+            async def start(self, on_event):
+                # The collector awaits its callback; a synchronous `ingest`
+                # passed directly would raise "bool is not awaitable".
+                await on_event(event("collector-event"))
+
+            async def stop(self):
+                self.stopped = True
+
+        session = LiveSession(
+            agent=FakeAgent(),
+            on_output=_async_none,
+            session_id="collector-test",
+            now_ms=lambda: 1000,
+        )
+        await session.start()
+        with patch(
+            "src.open_llm_vtuber.live.collectors.bilibili_official.BilibiliOfficialCollector",
+            FakeCollector,
+        ):
+            await session.start_bilibili(object())
+        self.assertEqual(session.director.status()["accepted"], 1)
+        await session.stop()
+        self.assertTrue(FakeCollector.instances[0].stopped)
+
+    async def test_live_session_persists_user_side_of_dialogue(self):
+        class FakeAgent:
+            _rundown_state = None
+
+            async def chat(self, _input_data):
+                if False:
+                    yield None
+
+        db_path = Path("data") / f"test-live-chat-{uuid.uuid4().hex}.db"
+        store = LiveStore(db_path)
+        session = LiveSession(
+            agent=FakeAgent(),
+            on_output=_async_none,
+            session_id="chat-persist",
+            store=store,
+            now_ms=lambda: 1000,
+        )
+        await session.start()
+        batch = LiveBatch(
+            id="chat-batch",
+            kind="chat",
+            priority=40,
+            events=(event("chat-event", text="你好"),),
+        )
+        await session._handle_batch(batch)
+        chats = store.recent_chat("chat-persist")
+        self.assertTrue(any(row["role"] == "user" for row in chats))
+        self.assertTrue(any("你好" in row["content"] for row in chats))
+        await session.stop()
+        self.assertEqual(store.get_session("chat-persist")["status"], "ended")
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(f"{db_path}{suffix}")
+            if path.exists():
+                path.unlink()
+
+    async def test_auto_begun_rundown_can_still_start_session(self):
+        class FakeAgent:
+            _rundown_state = None
+
+            async def chat(self, _input_data):
+                if False:
+                    yield None
+
+        session = LiveSession(
+            agent=FakeAgent(),
+            on_output=_async_none,
+            session_id="auto-begin",
+            now_ms=lambda: 1000,
+        )
+        session.load_rundown(
+            [{"id": "open", "title": "开场", "goal": "问候", "expected_ms": 1000}],
+            auto_begin=True,
+        )
+        await session.start()
+        self.assertEqual(session.rundown.status, "running")
         await session.stop()
 
     def test_live_agent_is_a_valid_config_choice(self):
@@ -182,6 +392,10 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
 
 async def _append(target: list[object], value: object) -> None:
     target.append(value)
+
+
+async def _async_none(*_args, **_kwargs) -> None:
+    return None
 
 
 async def _wait_until(predicate) -> None:

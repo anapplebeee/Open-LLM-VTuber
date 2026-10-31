@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from src.open_llm_vtuber.live.events import LiveBatch, RoomEvent
-from src.open_llm_vtuber.live.planner import LiveReActPlanner
+from src.open_llm_vtuber.live.planner import LiveDecision, LiveReActPlanner
 from src.open_llm_vtuber.live.replyer import LiveReplyer
 
 
@@ -78,8 +78,15 @@ class LivePlannerReplyerTest(unittest.IsolatedAsyncioTestCase):
             )
         ).plan(batch())
         text = await replyer.reply(decision, batch())
-        self.assertEqual(text, "今天吃鱼，感谢小蓝的弹幕。")
+        self.assertEqual(text, "[joy]今天吃鱼，感谢小蓝的弹幕。")
         self.assertIn("表达引擎", llm.system_prompts[0])
+
+    async def test_replyer_converts_kaomoji_to_expression_tag(self):
+        llm = FakeLLM(["好开心 (≧▽≦)"])
+        replyer = LiveReplyer(llm)
+        decision = LiveDecision(True, "test", "回应", emotion=None, intensity=0.5)
+        text = await replyer.reply(decision, batch())
+        self.assertEqual(text, "[joy]好开心。")
 
 
 if __name__ == "__main__":

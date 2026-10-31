@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 from loguru import logger
 from .agent.agents.live_streamer_agent import LiveStreamerAgent
 from .live.events import RoomEvent
+from .live.memory import MemoryManager, MemoryStore
 from .live.output import LiveBrowserOutput
 from .live.recap import SessionRecapWriter
 from .live.runtime import LiveSession
@@ -63,6 +64,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
     router = APIRouter()
     live_active = False
     live_store = LiveStore()
+    live_memory = MemoryManager(MemoryStore("data/xiaojing-memory.db"))
 
     @router.websocket("/live-ws")
     async def live_websocket_endpoint(websocket: WebSocket):
@@ -114,12 +116,20 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             agent=context.agent_engine,
             on_output=output.send,
             on_batch_end=output.end_batch,
+            on_close=output.close,
             session_id=session_id,
             store=live_store,
             recap_writer=recap_writer,
+            memory=live_memory,
         )
-        await session.start()
         try:
+            try:
+                await session.start()
+            except Exception as exc:  # noqa: BLE001 - report start failure
+                await websocket.send_text(
+                    json.dumps({"type": "error", "message": f"live start failed: {exc}"})
+                )
+                raise
             while True:
                 raw = await websocket.receive_text()
                 try:
@@ -167,7 +177,83 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                         continue
                     accepted = session.ingest(event)
                 elif message_type == "bilibili-event":
-                    accepted = session.ingest_bilibili(message.get("payload", {}))
+                    try:
+                        accepted = session.ingest_bilibili(message.get("payload", {}))
+                    except Exception as exc:  # noqa: BLE001 - malformed payload
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                elif message_type == "douyin-event":
+                    try:
+                        accepted = session.ingest_douyin(message.get("payload", {}))
+                    except Exception as exc:  # noqa: BLE001 - malformed payload
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                elif message_type == "rundown-load":
+                    try:
+                        snapshot = session.load_rundown(
+                            message.get("segments", []),
+                            auto_begin=bool(message.get("auto_begin", False)),
+                        )
+                    except Exception as exc:  # noqa: BLE001 - report validation error
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({"type": "rundown-status", **snapshot})
+                    )
+                    continue
+                elif message_type == "proactive":
+                    try:
+                        snapshot = session.set_proactive(
+                            enabled=message.get("enabled"),
+                            interval_ms=message.get("interval_ms"),
+                        )
+                    except Exception as exc:  # noqa: BLE001 - report config error
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({"type": "proactive-status", **snapshot})
+                    )
+                    continue
+                elif message_type == "rundown-control":
+                    try:
+                        snapshot = session.control_rundown(
+                            str(message.get("action", "")),
+                            by=str(message.get("by", "operator")),
+                        )
+                    except Exception as exc:  # noqa: BLE001 - report control error
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({"type": "rundown-status", **snapshot})
+                    )
+                    continue
+                elif message_type == "notebook":
+                    try:
+                        if message.get("action", "read") == "set":
+                            content = session.set_notebook(str(message.get("content", "")))
+                        elif message.get("action", "read") == "clear":
+                            content = session.set_notebook("")
+                        else:
+                            content = session.read_notebook()
+                    except Exception as exc:  # noqa: BLE001 - report notebook error
+                        await websocket.send_text(
+                            json.dumps({"type": "error", "message": str(exc)})
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({"type": "notebook-status", "content": content})
+                    )
+                    continue
                 elif message_type == "status":
                     await websocket.send_text(
                         json.dumps({"type": "live-status", **session.status()})
@@ -191,9 +277,13 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                 )
         except WebSocketDisconnect:
             logger.info("Live WebSocket disconnected")
+        except Exception:  # noqa: BLE001 - always release the single-session flag
+            logger.exception("Live WebSocket session failed")
         finally:
-            await session.stop()
-            live_active = False
+            try:
+                await session.stop()
+            finally:
+                live_active = False
 
     return router
 

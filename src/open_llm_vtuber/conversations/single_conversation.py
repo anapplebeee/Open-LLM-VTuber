@@ -137,10 +137,11 @@ async def process_single_conversation(
             # full_response will contain partial response before error
         # --- End processing agent response ---
 
-        # Wait for any pending TTS tasks
+        # Wait for any pending TTS tasks. ``finalize_conversation_turn`` sends
+        # the single backend-synth-complete after waiting for the ordered
+        # sender; sending it here as well races the playback acknowledgement.
         if tts_manager.task_list:
             await asyncio.gather(*tts_manager.task_list)
-            await websocket_send(json.dumps({"type": "backend-synth-complete"}))
 
         await finalize_conversation_turn(
             tts_manager=tts_manager,

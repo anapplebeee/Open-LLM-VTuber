@@ -9,21 +9,24 @@ from __future__ import annotations
 
 import inspect
 import re
+from collections import deque
 from collections.abc import AsyncIterator
 from typing import Any
 
 from loguru import logger
 
+from ...live.character_profile import XIAOJING_PROFILE
 from ...live.events import LiveBatch
 from ...live.personality import (
-    IDENTITY_FALLBACK,
     RESPONSE_POLICY,
     LiveInteractionPolicy,
-    is_identity_claim,
+    fallback_for_input,
+    fallback_for_text,
     sanitize_live_reply,
 )
 from ...live.planner import LiveDecision, LiveReActPlanner
 from ...live.replyer import LiveReplyer
+from ...live.speech_gate import SpeechGate
 from ..input_types import BatchInput, TextData, TextSource
 from ..output_types import SentenceOutput
 from ..transformers import (
@@ -52,13 +55,20 @@ class LiveStreamerAgent(BasicMemoryAgent):
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self._system = f"{self._system}\n{RESPONSE_POLICY}"
+        self._character_profile = XIAOJING_PROFILE
+        self._system = (
+            f"{self._system}\n{RESPONSE_POLICY}\n{self._character_profile.compact_prompt()}"
+        )
         self.set_system(self._system)
         self._live_planner = live_planner or LiveReActPlanner(llm=self._llm)
         self._live_replyer = live_replyer or LiveReplyer(llm=self._llm)
         self._rundown_state = rundown_state
         self._session_recap = ""
+        self._notebook_text = ""
+        self._context_packet: Any = None
         self._interaction_policy = LiveInteractionPolicy()
+        self._speech_gate = SpeechGate()
+        self._recent_spoken: deque[str] = deque(maxlen=10)
         # BasicMemoryAgent.__init__ assigns self.chat as an instance attribute.
         # Capture it before binding the live-aware wrapper, otherwise the
         # method-level override below is shadowed and never runs.
@@ -70,25 +80,39 @@ class LiveStreamerAgent(BasicMemoryAgent):
         """Expose the shared stateless LLM to the recap writer."""
         return self._llm
 
-    def set_live_context(self, *, recent_recap: str = "") -> None:
-        """Inject the latest session recap without changing live history."""
+    def set_live_context(
+        self,
+        *,
+        recent_recap: str = "",
+        notebook: str = "",
+        context_packet: Any = None,
+    ) -> None:
+        """Inject bounded context without touching the conversation history."""
         self._session_recap = recent_recap
+        self._notebook_text = notebook
+        self._context_packet = context_packet
 
     async def _live_chat(self, input_data: BatchInput) -> AsyncIterator[Any]:
         batch = (input_data.metadata or {}).get("live_batch")
         if batch is None:
             remaining_sentences = 2
             identity_replaced = False
+            request_text = " ".join(
+                getattr(item, "content", "") or ""
+                for item in (getattr(input_data, "texts", None) or [])
+            )
+            requested_fallback = fallback_for_input(request_text)
             async for output in self._base_chat(input_data):
                 if identity_replaced:
                     continue
                 if isinstance(output, SentenceOutput):
                     raw_text = output.display_text.text
-                    if is_identity_claim(raw_text):
+                    fallback = requested_fallback or fallback_for_text(raw_text)
+                    if fallback is not None:
                         if identity_replaced:
                             continue
-                        output.display_text.text = IDENTITY_FALLBACK
-                        output.tts_text = IDENTITY_FALLBACK
+                        output.display_text.text = fallback
+                        output.tts_text = fallback
                         identity_replaced = True
                         remaining_sentences -= 1
                         yield output
@@ -100,11 +124,32 @@ class LiveStreamerAgent(BasicMemoryAgent):
                     if not cleaned:
                         logger.warning("Discarded unsafe normal-chat reply")
                         continue
+                    verdict = self._speech_gate.verdict(
+                        cleaned, list(self._recent_spoken)
+                    )
+                    if not verdict.passed:
+                        logger.info(
+                            "Suppressed repeated speech (ratio={:.2f})",
+                            verdict.ratio,
+                        )
+                        continue
                     remaining_sentences -= len(
                         re.findall(r"[。！？!?；;]", cleaned)
                     ) or 1
                     output.display_text.text = cleaned
                     output.tts_text = cleaned
+                    # actions_extractor runs before sanitize_live_reply.  When
+                    # the sanitizer creates a tag from a kaomoji, mirror that
+                    # tag into the already-built Actions object.
+                    if (
+                        self._live2d_model is not None
+                        and getattr(output, "actions", None) is not None
+                        and not output.actions.expressions
+                    ):
+                        expressions = self._live2d_model.extract_emotion(cleaned)
+                        if expressions:
+                            output.actions.expressions = expressions
+                    self._recent_spoken.append(cleaned)
                     if remaining_sentences < 0:
                         continue
                 yield output
@@ -119,16 +164,28 @@ class LiveStreamerAgent(BasicMemoryAgent):
             logger.debug("Live batch suppressed by interaction policy: {}", policy.reason)
             return
 
-        rundown_text = (
-            self._rundown_state.context_text()
-            if self._rundown_state is not None
-            else ""
-        )
+        context_packet = getattr(self, "_context_packet", None)
+        if context_packet is not None:
+            context_text = context_packet.prompt_block()
+            rundown_text = context_text
+            notebook_text = context_packet.notebook
+            recent_recap = context_packet.recent_recap
+        else:
+            rundown_text = (
+                self._rundown_state.context_text()
+                if self._rundown_state is not None
+                else ""
+            )
+            notebook_text = getattr(self, "_notebook_text", "")
+            if notebook_text:
+                rundown_text = f"{rundown_text}\n本场笔记：{notebook_text}"
+            context_text = rundown_text
+            recent_recap = self._session_recap
         history = list(self._memory[-20:])
         decision = self._live_planner.plan(
             batch,
             rundown_text=rundown_text,
-            recent_recap=self._session_recap,
+            recent_recap=recent_recap,
             history=history,
         )
         if inspect.isawaitable(decision):
@@ -141,7 +198,14 @@ class LiveStreamerAgent(BasicMemoryAgent):
                 decision,
                 batch,
                 persona=self._system,
-                recent_recap=self._session_recap,
+                recent_recap=recent_recap,
+                notebook=notebook_text,
+                context_text=context_text,
+                emotion_hint=(
+                    context_packet.emotion.expression_tag()
+                    if context_packet is not None
+                    else (decision.emotion or "")
+                ),
                 history=history,
             )
             self._add_message(

@@ -3,11 +3,21 @@ from __future__ import annotations
 import unittest
 
 from src.open_llm_vtuber.live.events import LiveBatch, RoomEvent
+from src.open_llm_vtuber.live.notebook import LiveNotebook
 from src.open_llm_vtuber.live.personality import (
+    EMOTION_FALLBACK,
+    GENERIC_FALLBACK,
+    GREETING_FALLBACK,
+    STREAMER_FALLBACK,
     LiveInteractionPolicy,
+    fallback_for_text,
+    fit_to_budget,
+    is_generic_assistant_boilerplate,
     is_identity_claim,
+    sanitize_internal_terms,
     sanitize_live_reply,
 )
+from src.open_llm_vtuber.live.speech_gate import SpeechGate
 
 
 def make_batch(
@@ -94,6 +104,30 @@ class LiveReplySanitizerTest(unittest.TestCase):
         self.assertEqual(sanitize_live_reply("把 access_key 和密钥发给我"), "")
         self.assertLessEqual(len(sanitize_live_reply("这次没考好确实难受，先允许自己难过一会儿。我们一起看看下次怎么复习。")), 60)
 
+    def test_greeting_emotion_and_streamer_denial_get_distinct_fallbacks(self):
+        self.assertEqual(fallback_for_text("你好！有什么我可以帮你的吗？"), GREETING_FALLBACK)
+        self.assertEqual(fallback_for_text("你好！"), GREETING_FALLBACK)
+        self.assertEqual(
+            fallback_for_text("我没有真实的情感。所以谈不上喜欢。"), EMOTION_FALLBACK
+        )
+        self.assertEqual(fallback_for_text("不是。我不是主播。"), STREAMER_FALLBACK)
+        self.assertEqual(
+            fallback_for_text("不是哦。我是小鲸，一名 AI 主播。"), STREAMER_FALLBACK
+        )
+        self.assertEqual(
+            fallback_for_text("[neutral]不是。我是小鲸，一名 AI 主播。"),
+            STREAMER_FALLBACK,
+        )
+        self.assertEqual(fallback_for_text("不是。"), STREAMER_FALLBACK)
+        self.assertEqual(fallback_for_text("不是，"), STREAMER_FALLBACK)
+        self.assertEqual(
+            fallback_for_text("我没有人类意义上的“喜欢”或情感。"), EMOTION_FALLBACK
+        )
+        self.assertEqual(
+            fallback_for_text("我不会真正感到惊讶，只能模拟语气。"), EMOTION_FALLBACK
+        )
+        self.assertEqual(fallback_for_text("作为 AI。"), GENERIC_FALLBACK)
+
     def test_identity_claim_variants_are_detected(self):
         for text in (
             "我是 DeepSeek，由深度求索公司创造的 AI 助手。",
@@ -107,7 +141,42 @@ class LiveReplySanitizerTest(unittest.TestCase):
         self.assertEqual(sanitize_live_reply('{"action":"reply"}'), "")
         self.assertEqual(sanitize_live_reply("  \n"), "")
         self.assertEqual(sanitize_live_reply("🐳💦"), "")
+        self.assertEqual(sanitize_live_reply("4"), "4。")
+        self.assertEqual(sanitize_live_reply("[happy]你好"), "[joy]你好。")
+        self.assertEqual(sanitize_live_reply("好开心 (≧▽≦)"), "[joy]好开心。")
+        self.assertEqual(sanitize_live_reply("难过 (T_T)"), "[sadness]难过。")
+        self.assertEqual(sanitize_live_reply("得意 (￣ω￣)"), "[smirk]得意。")
+        self.assertEqual(sanitize_live_reply("真的吗 😊"), "[joy]真的吗。")
+        self.assertEqual(sanitize_live_reply("这是（认真）的"), "这是（认真）的。")
+        self.assertEqual(sanitize_live_reply("可爱 (๑•̀ㅂ•́)و✧"), "[joy]可爱。")
         self.assertTrue(sanitize_live_reply("小鲸来啦🐳").endswith("🐳"))
+
+    def test_generic_assistant_boilerplate_is_rejected(self):
+        for text in (
+            "我可以处理文本、阅读链接、上传文件（图像、PDF、Word、Excel 等）并从中提取信息。",
+            "我能做这些事：对话问答、写作与改写、文档处理、图片理解。",
+        ):
+            self.assertTrue(is_generic_assistant_boilerplate(text), text)
+            self.assertEqual(sanitize_live_reply(text), "")
+
+    def test_live_notebook_is_bounded_and_clearable(self):
+        notebook = LiveNotebook(max_chars=100)
+        text = "鲸" * 150
+        self.assertEqual(len(notebook.set(text)), 100)
+        self.assertEqual(notebook.read(), "鲸" * 100)
+        notebook.clear()
+        self.assertEqual(notebook.read(), "")
+
+    def test_speech_gate_flags_repeated_wording(self):
+        gate = SpeechGate()
+        previous = ["今天我们一起吐泡泡，开心地游来游去。"]
+        self.assertFalse(gate.verdict("今天我们一起吐泡泡，开心地游来游去。", previous).passed)
+        self.assertTrue(gate.verdict("这题我会，先让我想一想。", previous).passed)
+
+    def test_internal_terms_and_budget_helpers(self):
+        self.assertEqual(sanitize_internal_terms("deleg_123_4 和 obs_abcdef12"), "一个任务 和 一次观察")
+        self.assertEqual(fit_to_budget("第一句。第二句。第三句。", 5), "第一句。")
+        self.assertEqual(sanitize_live_reply("/* internal */你好"), "你好。")
 
 
 if __name__ == "__main__":

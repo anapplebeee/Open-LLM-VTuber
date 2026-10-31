@@ -268,8 +268,9 @@ async def handle_group_member_turn(
     )
 
     if tts_manager.task_list:
+        # ``finalize_conversation_turn`` owns the single backend-synth-complete
+        # after the ordered sender drains; do not send a duplicate here.
         await asyncio.gather(*tts_manager.task_list)
-        await current_ws_send(json.dumps({"type": "backend-synth-complete"}))
 
         broadcast_ctx = BroadcastContext(
             broadcast_func=broadcast_func,

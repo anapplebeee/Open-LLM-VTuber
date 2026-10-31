@@ -145,7 +145,8 @@ class Live2dModel:
 
     def extract_emotion(self, str_to_check: str) -> list:
         """
-        Check the input string for any emotion keywords and return a list of values (the expression index) of the emotions found in the string.
+        Check the input string for emotion keywords and return the mapped expression
+        indices or names configured for the current model.
 
         Parameters:
             str_to_check (str): The string to check for emotions.
@@ -156,7 +157,8 @@ class Live2dModel:
 
         expression_list = []
         str_to_check = str_to_check.lower()
-
+        # emo_map values may be expression indices (legacy models) or names
+        # (model-specific maps such as deepseek's happy/happy2/...).
         i = 0
         while i < len(str_to_check):
             if str_to_check[i] != "[":

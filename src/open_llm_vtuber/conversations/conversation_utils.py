@@ -168,6 +168,16 @@ async def finalize_conversation_turn(
     """Finalize a conversation turn"""
     if tts_manager.task_list:
         await asyncio.gather(*tts_manager.task_list)
+        # ``task_list`` covers synthesis only. Wait for the ordered payload
+        # sender as well, otherwise the client can receive
+        # ``backend-synth-complete`` (and send playback-complete) before the
+        # last audio payload has actually been written to the socket.
+        idle = await tts_manager.wait_idle(timeout=15)
+        if not idle:
+            logger.warning(
+                "TTS payload sender did not drain before playback request for {}",
+                client_uid,
+            )
         await websocket_send(json.dumps({"type": "backend-synth-complete"}))
 
         response = await message_handler.wait_for_response(

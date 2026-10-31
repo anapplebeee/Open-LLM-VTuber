@@ -86,8 +86,9 @@ class LiveDirector:
     def ingest(self, event: RoomEvent) -> bool:
         """Queue an event without blocking the platform callback.
 
-        Full queues drop the newest event rather than creating unbounded memory.
-        The caller can inspect ``status()['dropped']`` and log the event id.
+        A full queue evicts the oldest wait item in the lowest-priority band
+        when the new event is more important; otherwise the new event is
+        dropped. Memory stays bounded either way.
         """
         if not isinstance(event, RoomEvent):
             raise TypeError("event must be a RoomEvent")
@@ -96,9 +97,19 @@ class LiveDirector:
         if event_key in self._seen:
             return False
         if len(self._queue) >= self.max_queue:
+            lowest = min(self.PRIORITY[item.type] for item in self._queue)
+            if lowest >= self.PRIORITY[event.type]:
+                self._dropped += 1
+                logger.warning("Live queue full; dropping event {}", event.id)
+                return False
+            # Evict the oldest wait item in the lowest-priority band.
+            for index, item in enumerate(self._queue):
+                if self.PRIORITY[item.type] == lowest:
+                    del self._queue[index]
+                    self._seen.pop(self._event_key(item), None)
+                    break
             self._dropped += 1
-            logger.warning("Live queue full; dropping event {}", event.id)
-            return False
+            logger.warning("Live queue full; evicted an older low-priority event")
         self._seen[event_key] = self._now_ms()
         self._accepted += 1
         self._queue.append(event)
@@ -154,23 +165,31 @@ class LiveDirector:
                 self._wakeup.set()
 
     def _drain_available(self) -> list[RoomEvent]:
-        events: list[RoomEvent] = []
         now = self._now_ms()
-        while self._queue and len(events) < self.max_batch:
+        live: deque[RoomEvent] = deque()
+        while self._queue:
             event = self._queue.popleft()
             if now - event.received_at_ms > self.max_event_age_ms:
                 self._dropped += 1
                 logger.info("Dropping expired live event {}", event.id)
                 continue
-            if not events:
-                events.append(event)
-                continue
-            # Do not mix a high-priority event into a lower-priority batch.
-            if self.PRIORITY[event.type] != self.PRIORITY[events[0].type]:
-                self._queue.appendleft(event)
-                break
-            events.append(event)
-        return events
+            live.append(event)
+        if not live:
+            return []
+
+        # Highest-priority band first, FIFO inside the band. A gift/operator
+        # must not wait behind a long chat backlog; the consumer still
+        # processes one batch at a time, so this only reorders the wait queue.
+        best = max(self.PRIORITY[event.type] for event in live)
+        selected: list[RoomEvent] = []
+        remaining: deque[RoomEvent] = deque()
+        for event in live:
+            if len(selected) < self.max_batch and self.PRIORITY[event.type] == best:
+                selected.append(event)
+            else:
+                remaining.append(event)
+        self._queue = remaining
+        return selected
 
     def _make_batch(self, events: list[RoomEvent]) -> LiveBatch | None:
         if not events:

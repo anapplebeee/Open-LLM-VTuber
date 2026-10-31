@@ -92,33 +92,42 @@ class LiveStore:
                 (ended_at_ms, session_id),
             )
 
-    def append_event(self, session_id: str, event: RoomEvent) -> None:
+    @staticmethod
+    def _insert_event(
+        connection: sqlite3.Connection, session_id: str, event: RoomEvent
+    ) -> None:
         gift_json = event.gift.model_dump_json() if event.gift else None
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO live_events(
+                session_id, event_id, type, platform, room_id, user_id,
+                user_name, content, gift_json, received_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                event.id,
+                event.type,
+                event.platform,
+                event.room_id,
+                event.user.id,
+                event.user.name,
+                event.content,
+                gift_json,
+                event.received_at_ms,
+            ),
+        )
+
+    def append_event(self, session_id: str, event: RoomEvent) -> None:
         with self._session() as connection:
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO live_events(
-                    session_id, event_id, type, platform, room_id, user_id,
-                    user_name, content, gift_json, received_at_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    session_id,
-                    event.id,
-                    event.type,
-                    event.platform,
-                    event.room_id,
-                    event.user.id,
-                    event.user.name,
-                    event.content,
-                    gift_json,
-                    event.received_at_ms,
-                ),
-            )
+            self._insert_event(connection, session_id, event)
 
     def append_events(self, session_id: str, events: Iterable[RoomEvent]) -> None:
-        for event in events:
-            self.append_event(session_id, event)
+        # One transaction per batch instead of one SQLite connection/commit
+        # per event; a 20-event batch otherwise pays 20 fsyncs.
+        with self._session() as connection:
+            for event in events:
+                self._insert_event(connection, session_id, event)
 
     def append_chat(
         self, session_id: str, role: str, content: str, created_at_ms: int
