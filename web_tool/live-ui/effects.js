@@ -22,11 +22,13 @@
     window.Audio = TrackedAudio;
   }
 
+  const liveSockets = [];
   const NativeWebSocket = window.WebSocket;
   if (NativeWebSocket) {
     class EffectWebSocket extends NativeWebSocket {
       constructor(...args) {
         super(...args);
+        liveSockets.push(this);
         this.addEventListener("message", (event) => {
           try {
             const message = JSON.parse(event.data);
@@ -58,6 +60,18 @@
     window.WebSocket = EffectWebSocket;
   }
 
+  window.__dshSendText = (text) => {
+    for (const socket of liveSockets) {
+      if (socket.readyState === 1) {
+        socket.send(
+          JSON.stringify({ type: "text-input", text: String(text || "") })
+        );
+        return true;
+      }
+    }
+    return false;
+  };
+
   let layer = null;
   let clearTimer = 0;
   let fire = null;
@@ -81,6 +95,10 @@
   let playlistControls = null;
   let currentSongTitle = "";
   let currentQueueIndex = -1;
+  let songDurationMs = 0;
+  let songArtist = "";
+  let songNowEl = null;
+  let songProgressFill = null;
   const songData = new Map();
   let songVolume = Number(localStorage.getItem("dsh-song-volume-v2") ?? 0.1);
   if (!Number.isFinite(songVolume) || songVolume < 0 || songVolume > 1) {
@@ -378,8 +396,8 @@
     playlistBody.style.cssText = "padding-top:6px;max-height:230px;overflow:hidden;";
     playlistEl.appendChild(playlistTitle);
     playlistEl.appendChild(playlistControls);
-    playlistEl.appendChild(playlistBody);
     buildSongControls();
+    playlistEl.appendChild(playlistBody);
     document.body.appendChild(playlistEl);
   }
 
@@ -472,6 +490,36 @@
       "display:flex;align-items:center;gap:7px;width:100%;padding-top:2px;";
     volumeRow.append(volumeLabel, volumeInput);
     playlistControls.append(buttonRow, volumeRow);
+
+    songNowEl = document.createElement("div");
+    songNowEl.style.cssText = [
+      "padding:5px 0 3px",
+      "color:#cfe5f8",
+      "font:11px/1.4 system-ui,sans-serif",
+      "white-space:nowrap",
+      "overflow:hidden",
+      "text-overflow:ellipsis",
+    ].join(";");
+    const progressWrap = document.createElement("div");
+    progressWrap.style.cssText = [
+      "width:100%",
+      "height:4px",
+      "border-radius:999px",
+      "background:rgba(255,255,255,.12)",
+      "overflow:hidden",
+    ].join(";");
+    songProgressFill = document.createElement("div");
+    songProgressFill.style.cssText = [
+      "width:0%",
+      "height:100%",
+      "border-radius:999px",
+      "background:linear-gradient(90deg,#78a9d4,#a8d4ff)",
+      "transition:width .2s linear",
+    ].join(";");
+    progressWrap.appendChild(songProgressFill);
+
+    playlistEl.appendChild(songNowEl);
+    playlistEl.appendChild(progressWrap);
     playlistEl.appendChild(songStatusEl);
     updateSongControls();
   }
@@ -505,6 +553,27 @@
     volumeLabel.textContent = `音量 ${Math.round(songVolume * 100)}%`;
   }
 
+  function updateSongProgress() {
+    if (!songNowEl || !songProgressFill) return;
+    if (!currentSongTitle) {
+      songNowEl.textContent = "";
+      songProgressFill.style.width = "0%";
+      return;
+    }
+    const artist = songArtist ? ` — ${songArtist}` : "";
+    songNowEl.textContent = `正在播放：${currentSongTitle}${artist}`;
+    const total =
+      (songAudio && Number.isFinite(songAudio.duration) && songAudio.duration > 0
+        ? songAudio.duration
+        : songDurationMs / 1000) || 0;
+    const elapsed =
+      songAudio && Number.isFinite(songAudio.currentTime)
+        ? songAudio.currentTime
+        : 0;
+    const pct = total > 0 ? Math.max(0, Math.min(100, (elapsed / total) * 100)) : 0;
+    songProgressFill.style.width = `${pct}%`;
+  }
+
   function stopSong() {
     pendingSong = null;
     clearTimeout(songPlayTimer);
@@ -518,8 +587,11 @@
       songAudio = null;
     }
     currentSongTitle = "";
+    songArtist = "";
+    songDurationMs = 0;
     hideSongChip();
     renderPlaylist();
+    updateSongProgress();
     updateSongControls();
   }
 
@@ -541,8 +613,10 @@
       );
       if (found >= 0) currentQueueIndex = found;
     }
+    updateSongProgress();
     updateSongControls();
     playlistBody.innerHTML = "";
+    const isLiveView = window.location.pathname.includes("live-view");
     for (const item of songQueue.slice(0, 5)) {
       const row = document.createElement("div");
       const isCurrent =
@@ -558,6 +632,7 @@
         "white-space:nowrap",
         "overflow:hidden",
         "text-overflow:ellipsis",
+        "pointer-events:auto",
       ].join(";");
       const num = document.createElement("span");
       num.textContent = isCurrent ? "▶" : `${item.position}.`;
@@ -569,6 +644,26 @@
       user.textContent = truncateText(item.user, 8);
       user.style.cssText = "color:#7e9bb7;flex:0 0 auto;";
       row.append(num, song, user);
+      if (!isLiveView) {
+        const remove = document.createElement("button");
+        remove.textContent = "×";
+        remove.title = `取消点歌：${item.title}`;
+        remove.style.cssText = [
+          "pointer-events:auto",
+          "border:0",
+          "background:transparent",
+          "color:#8fb0ca",
+          "font:14px/1 system-ui,sans-serif",
+          "cursor:pointer",
+          "padding:0 1px",
+          "flex:0 0 auto",
+        ].join(";");
+        remove.addEventListener("click", (event) => {
+          event.stopPropagation();
+          window.__dshSendText?.(`取消点歌 ${item.title}`);
+        });
+        row.appendChild(remove);
+      }
       playlistBody.appendChild(row);
     }
     if (songQueue.length > 5) {
@@ -661,6 +756,8 @@
       songAudio = null;
     }
     currentSongTitle = String(song.title || "");
+    songArtist = String(song.artist || "");
+    songDurationMs = Number(song.duration_ms) || 0;
     const title = currentSongTitle.trim();
     const index = songQueue.findIndex(
       (item) => String(item.title || "").trim() === title
@@ -673,10 +770,18 @@
     songAudio = audio;
     hideSongChip();
     renderPlaylist();
+    updateSongProgress();
     updateSongControls();
+    const syncProgress = () => {
+      if (songAudio === audio) updateSongProgress();
+    };
+    audio.addEventListener("timeupdate", syncProgress);
+    audio.addEventListener("loadedmetadata", syncProgress);
     audio.addEventListener("ended", () => {
       if (songAudio !== audio) return;
       songAudio = null;
+      songArtist = "";
+      songDurationMs = 0;
       const hasNext = currentQueueIndex >= 0 && currentQueueIndex < songQueue.length - 1;
       if (hasNext) {
         playAdjacent(1, true);
@@ -684,6 +789,7 @@
         currentSongTitle = "";
         hideSongChip();
         renderPlaylist();
+        updateSongProgress();
         updateSongControls();
       }
     });
@@ -717,6 +823,8 @@
     // A new request must never replace the song that is currently audible.
     if (songAudio || pendingSong) return;
     currentSongTitle = title;
+    songArtist = String(song.artist || "");
+    songDurationMs = Number(song.duration_ms) || 0;
     currentQueueIndex = index;
     pendingSong = song;
     // Give the acknowledgement TTS a chance to finish first. A real
