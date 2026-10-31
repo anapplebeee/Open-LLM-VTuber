@@ -213,6 +213,30 @@ vocal_path|speaker_name|language|text
 - 因此本轮只完成选角、训练和授权调研，没有伪造“已训练完成”或“V5 试听通过”
 - 下一阶段应先获得一位可授权声优的 5 秒试音，再做 zero-shot 接入验证
 
+## 9.1 本机 1060 6GB 的现实评估
+
+本机实测：
+
+```text
+GPU: NVIDIA GeForce GTX 1060 6GB
+Compute Capability: 6.1 (Pascal)
+Driver: 522.30
+PyTorch in OLV venv: 未安装
+ffmpeg: 未找到
+```
+
+结论：
+
+- **zero-shot / 短句推理**：V2Pro 级别有 6GB 起步的可能，但 1060 会被强制 FP32，速度和显存都吃亏；长文本还有显存持续增长问题，需要分段和定期重启 API。
+- **V5 训练**：不建议在 6GB 卡上做。V3/V4 全量微调文档给的是 14GB，12GB 需要 gradient checkpointing，8GB 才考虑 LoRA；V5 不会更轻。
+- **V2Pro 小数据微调**：batch 设为 1 也许能启动，但 6GB + Pascal FP32 很容易 OOM，训练时间不可控，不能当稳定生产环境。
+- 生产训练建议至少 12–24GB 显存；只在 1060 上做 5 秒 zero-shot 试听更现实。
+
+参考硬件/版本说明（第三方整理，需以官方包为准）：
+https://nexgpu.net/en/models/gpt-sovits/
+
+本机 `data/voice-samples/` 下有四段候选试听音频，但没有证据表明它们是可授权克隆的真人素材；在使用前必须确认来源。若它们只是 Edge TTS 合成音，只能用于管线测试，不能当作“真人声音克隆”的效果证明。
+
 ## 10. 本机 V5 试跑前置条件
 
 满足以下条件后才能做真实 V5 试听，而不是只测接口：
