@@ -87,7 +87,7 @@
 
   let replyContext = "";
   let replyContextEl = null;
-  let replyContextTimer = 0;
+  let replyContextTimers = [];
 
   let presenceEl = null;
   let presenceState = "";
@@ -387,24 +387,56 @@
       }
       node = node.parentElement;
     }
-    // Fallback: find the 400px input-subtitle box anchored at the bottom of
-    // the Live2D stage even when its status label has not rendered yet.
+    // The built frontend renders the subtitle as a content-sized dark box
+    // (`background: rgba(0, 0, 0, 0.7)`) inside a 60%-wide absolute wrapper.
+    // Find that box directly; this is the frame the reply quote belongs in.
+    const darkBoxes = [];
+    for (const el of document.querySelectorAll("div")) {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      const bg = style.backgroundColor.replace(/\s+/g, "");
+      const text = (el.textContent || "").trim();
+      if (
+        bg === "rgba(0,0,0,0.7)" &&
+        rect.width >= 280 &&
+        rect.height >= 30 &&
+        rect.height <= 320 &&
+        rect.bottom > window.innerHeight * 0.55 &&
+        text.length >= 2 &&
+        text.length <= 160
+      ) {
+        darkBoxes.push({ el, rect });
+      }
+    }
+    if (darkBoxes.length) {
+      darkBoxes.sort((a, b) => b.rect.width - a.rect.width);
+      return darkBoxes[0].el;
+    }
+
+    // Also support the absolute ~440px wrapper used by some frontend builds.
     const candidates = [];
     for (const el of document.querySelectorAll("div")) {
       const rect = el.getBoundingClientRect();
       const style = getComputedStyle(el);
+      const text = (el.textContent || "").trim();
       if (
         style.position === "absolute" &&
         rect.width >= 280 &&
         rect.width <= 620 &&
-        rect.height >= 36 &&
+        rect.height >= 30 &&
+        rect.height <= 320 &&
         rect.bottom > window.innerHeight * 0.55 &&
-        Number(style.zIndex) >= 100
+        text.length >= 2 &&
+        text.length <= 160 &&
+        !statusLabels.has(text)
       ) {
-        candidates.push({ el, rect });
+        const score =
+          Math.abs(rect.width - 440) +
+          Math.abs(rect.bottom - (window.innerHeight - 80));
+        candidates.push({ el, rect, score });
       }
     }
-    candidates.sort((a, b) => b.rect.width - a.rect.width);
+    candidates.sort((a, b) => a.score - b.score);
     return candidates[0]?.el || null;
   }
 
@@ -414,13 +446,17 @@
     replyContextEl.textContent = `回复：${replyContext}`;
     const box = findSubtitleBox();
     if (box) {
-      // Put the reply quote inside the subtitle container, in its top-left
-      // corner, so it shares the subtitle frame instead of floating above it.
+      // Put the reply quote inside the subtitle container, flush with the
+      // frame's top-left corner. The subtitle box has 15px/30px padding, so
+      // pull the quote back by exactly that padding instead of sitting inside
+      // the text content area.
+      const boxStyle = getComputedStyle(box);
+      const padLeft = parseFloat(boxStyle.paddingLeft) || 0;
+      const padTop = parseFloat(boxStyle.paddingTop) || 0;
       replyContextEl.style.cssText = [
         "display:inline-flex",
         "align-self:flex-start",
-        "max-width:calc(100% - 24px)",
-        "margin:6px 0 0 12px",
+        `margin:${-padTop + 1}px 0 4px ${-padLeft + 1}px`,
         "padding:2px 8px",
         "border-left:2px solid rgba(120,170,215,.85)",
         "border-radius:4px",
@@ -464,8 +500,14 @@
   }
 
   function scheduleReplyContext() {
-    clearTimeout(replyContextTimer);
-    replyContextTimer = setTimeout(attachReplyContext, 80);
+    for (const timer of replyContextTimers) clearTimeout(timer);
+    replyContextTimers = [];
+    // The subtitle overlay is mounted slightly after the reply-context event.
+    // Retry so the quote moves from the stage fallback into the real subtitle
+    // container once React has rendered it.
+    for (const delay of [80, 280, 700, 1300, 2200]) {
+      replyContextTimers.push(setTimeout(attachReplyContext, delay));
+    }
   }
 
   window.__dshSetReplyContext = (text) => {
@@ -1179,6 +1221,7 @@
     clearTimeout(clearTimer);
     hideAll();
     positionEffectLayer();
+    if (replyContext) scheduleReplyContext();
     applyExpressionSustained(values[0]);
     const joined = values.join(" ");
     if (/anger|angry/.test(joined)) {
