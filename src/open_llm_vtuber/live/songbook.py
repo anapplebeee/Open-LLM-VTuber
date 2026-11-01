@@ -40,9 +40,9 @@ _ARTIST_TITLE = re.compile(r"^(.{2,20}?)(?:演唱|唱的|唱)的*(.{1,48})$")
 _CANCEL = re.compile(r"^(?:取消点歌|取消點歌|撤掉点歌|删掉点歌|刪掉點歌)\s*(.*)$")
 _DUPLICATE_PUNCT = re.compile(r"[\s，,。.!！？?、~～·]+")
 _PLAYBACK_CONTROL = re.compile(
-    r"^(?:切歌|跳过|下一首|上一首|暂停音乐|继续音乐|关闭音乐|停止音乐|关掉音乐|"
-    r"不是这首(?:呀|啊)?|不对(?:呀|啊)?|换一首)$"
+    r"^(?:切歌|跳过|下一首|上一首|暂停音乐|继续音乐|关闭音乐|停止音乐|关掉音乐)$"
 )
+_SONG_CORRECTION = re.compile(r"^(?:不是这首(?:呀|啊)?|不对(?:呀|啊)?|换一首)$")
 
 
 def detect_song_control(text: str) -> str | None:
@@ -60,15 +60,16 @@ def detect_song_control(text: str) -> str | None:
         "关闭音乐": "stop",
         "停止音乐": "stop",
         "关掉音乐": "stop",
-        "不是这首": "next",
-        "不是这首呀": "next",
-        "不是这首啊": "next",
-        "不对": "next",
-        "不对呀": "next",
-        "不对啊": "next",
-        "换一首": "next",
     }
     return mapping.get(command)
+
+
+def detect_song_correction(text: str) -> str | None:
+    """Map a correction phrase, caller must gate it by active song context."""
+    command = _CONTROL.sub("", (text or "")).strip()
+    if _SONG_CORRECTION.match(command):
+        return "next"
+    return None
 
 
 def normalize_title(value: str) -> str:

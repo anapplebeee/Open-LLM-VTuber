@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
+
+# Tests must never append synthetic events to the production review log.
+os.environ.setdefault("DSH_LIVE_REVIEW_DISABLED", "1")
 
 from src.open_llm_vtuber.config_manager.agent import AgentConfig
 from src.open_llm_vtuber.live.bilibili import map_bilibili_payload

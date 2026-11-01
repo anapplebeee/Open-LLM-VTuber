@@ -4,7 +4,11 @@ import unittest
 
 from src.open_llm_vtuber.live.events import RoomEvent
 from src.open_llm_vtuber.live.runtime import LiveSession
-from src.open_llm_vtuber.live.songbook import SongRequestQueue
+from src.open_llm_vtuber.live.songbook import (
+    SongRequestQueue,
+    detect_song_control,
+    detect_song_correction,
+)
 
 
 def event(text: str, *, user: str = "u1", at: int = 1_000_000) -> RoomEvent:
@@ -69,6 +73,9 @@ class SongRequestQueueTest(unittest.TestCase):
     def test_common_sentence_is_not_mistaken_for_song_request(self):
         queue = SongRequestQueue()
         self.assertIsNone(queue.handle(event("你唱的歌真好听")))
+        self.assertIsNone(detect_song_control("不对"))
+        self.assertEqual(detect_song_correction("不对"), "next")
+        self.assertEqual(detect_song_control("下一首"), "next")
 
     def test_play_yishou_prefix_is_removed(self):
         queue = SongRequestQueue()

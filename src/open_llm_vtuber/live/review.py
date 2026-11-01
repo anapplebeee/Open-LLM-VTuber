@@ -9,6 +9,7 @@ replayed without a database migration.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from collections.abc import Iterable
@@ -48,6 +49,13 @@ class LiveReviewLogger:
             for event in events
         ]
         if not items and not reply:
+            return None
+        disabled = os.getenv("DSH_LIVE_REVIEW_DISABLED", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if disabled and self.path == Path("data/live-review.jsonl"):
             return None
         timestamp = int(now_ms if now_ms is not None else time.time() * 1000)
         # Test harnesses historically passed synthetic millisecond counters

@@ -31,7 +31,7 @@ from .proactive import ProactiveScheduler
 from .review import LiveReviewLogger
 from .rundown import RundownState
 from .song_player import NeteaseSongProvider
-from .songbook import SongRequestQueue, detect_song_control
+from .songbook import SongRequestQueue, detect_song_control, detect_song_correction
 from .state import EmotionEngine, EmotionState, StreamState, ViewerRegistry
 from .store import LiveStore
 
@@ -340,6 +340,12 @@ class LiveSession:
         self._pending_song_control = None
         if event.type == "chat":
             control = detect_song_control(event.content or "")
+            if control is None:
+                # "不是这首/不对" is only a song control while a request is
+                # active; otherwise it is ordinary chat and must reach the LLM.
+                correction = detect_song_correction(event.content or "")
+                if correction is not None and self.song_requests.snapshot()["items"]:
+                    control = correction
             if control is not None:
                 self._pending_song_control = control
                 return event
