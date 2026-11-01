@@ -14,6 +14,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
+from .dashboard import init_dashboard_routes
 from .routes import (
     init_client_ws_route,
     init_live_ws_route,
@@ -104,6 +105,7 @@ class WebSocketServer:
         self.app.include_router(
             init_webtool_routes(default_context_cache=self.default_context_cache),
         )
+        self.app.include_router(init_dashboard_routes())
 
         # Initialize and include proxy routes if proxy is enabled
         system_config = config.system_config
@@ -147,6 +149,11 @@ class WebSocketServer:
             "/web-tool",
             CORSStaticFiles(directory="web_tool", html=True),
             name="web_tool",
+        )
+        self.app.mount(
+            "/dashboard",
+            CORSStaticFiles(directory="dashboard", html=True),
+            name="dashboard",
         )
 
         # In a source checkout without the frontend submodule, make the local

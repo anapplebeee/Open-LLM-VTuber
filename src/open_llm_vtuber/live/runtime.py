@@ -493,6 +493,13 @@ class LiveSession:
         """Resolve one queued track and ask the frontend to jump to it."""
         await self._play_song(title, entry_id, query=query, play_now=True)
 
+    async def control_song(self, action: str) -> None:
+        """Expose the existing frontend song controls to the dashboard."""
+        if action not in {"next", "prev", "pause", "resume", "stop"}:
+            raise ValueError(f"unsupported song action: {action}")
+        if self.on_song is not None:
+            await self.on_song({"type": "song-control", "action": action})
+
     async def _play_random_liked(self) -> None:
         """Resolve and dispatch one random track from NetEase liked songs."""
         try:
@@ -634,6 +641,13 @@ class LiveSession:
                 "enabled": self.song_provider.enabled and self.on_song is not None,
                 "active": len(self._song_tasks),
                 **self.song_playback.to_dict(),
+            },
+            "story": {
+                "active": bool(
+                    getattr(self.agent, "is_story_active", lambda: False)()
+                )
+                if self.agent is not None
+                else False
             },
             "emotion": {
                 "label": self.emotion_state.label,

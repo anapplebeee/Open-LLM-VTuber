@@ -17,6 +17,7 @@ from .live.memory import MemoryManager, MemoryStore
 from .live.output import LiveBrowserOutput
 from .live.output_hub import LiveOutputHub
 from .live.recap import SessionRecapWriter
+from .live.registry import set_current_live_session
 from .live.runtime import LiveSession
 from .live.store import LiveStore
 from .proxy_handler import ProxyHandler
@@ -198,6 +199,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             memory=live_memory,
         )
         live_session = session
+        set_current_live_session(session)
         try:
             try:
                 await session.start()
@@ -359,6 +361,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             try:
                 await session.stop()
             finally:
+                set_current_live_session(None)
                 live_session = None
                 live_active = False
 
