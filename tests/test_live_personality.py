@@ -192,7 +192,7 @@ class LiveReplySanitizerTest(unittest.TestCase):
     def test_fast_reply_covers_time_greeting_and_control(self):
         self.assertIn("现在是", fast_live_reply(make_batch("现在几点了")))
         self.assertEqual(fast_live_reply(make_batch("你好")), GREETING_FALLBACK)
-        self.assertEqual(fast_live_reply(make_batch("切歌")), "行，切了。")
+        self.assertEqual(fast_live_reply(make_batch("切歌")), "行，切了。别嫌我手快。")
         self.assertIsNone(fast_live_reply(make_batch("你唱的歌真好听")))
 
     def test_internal_terms_and_budget_helpers(self):

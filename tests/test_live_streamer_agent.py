@@ -8,7 +8,11 @@ from src.open_llm_vtuber.agent.agents.live_streamer_agent import LiveStreamerAge
 from src.open_llm_vtuber.agent.input_types import BatchInput, TextData, TextSource
 from src.open_llm_vtuber.agent.output_types import Actions, DisplayText, SentenceOutput
 from src.open_llm_vtuber.live.events import LiveBatch, RoomEvent
-from src.open_llm_vtuber.live.personality import LiveInteractionPolicy
+from src.open_llm_vtuber.live.personality import (
+    GENERIC_FALLBACK,
+    IDENTITY_FALLBACK,
+    LiveInteractionPolicy,
+)
 from src.open_llm_vtuber.live.planner import LiveDecision
 
 
@@ -113,7 +117,7 @@ class LiveStreamerWrapperTest(unittest.IsolatedAsyncioTestCase):
             files=None,
         )
         outputs = [item async for item in agent.chat(request)]
-        self.assertEqual([item.display_text.text for item in outputs], ["我是小鲸，一只蓝鲸娘。"])
+        self.assertEqual([item.display_text.text for item in outputs], [IDENTITY_FALLBACK])
 
     async def test_generic_capability_list_gets_a_short_host_fallback(self):
         async def fake_base(_input_data):
@@ -142,7 +146,7 @@ class LiveStreamerWrapperTest(unittest.IsolatedAsyncioTestCase):
         outputs = [item async for item in agent.chat(request)]
         self.assertEqual(
             [item.display_text.text for item in outputs],
-            ["我会陪你聊天，也会讲直播里发生的事。"],
+            [GENERIC_FALLBACK],
         )
 
     async def test_live_batch_reaches_planner_and_replyer(self):
