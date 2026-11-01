@@ -114,6 +114,22 @@ expected to acknowledge the queue position in one short spoken line.
 {"items":[{"id":"...","title":"海底","user":"观众名","position":1}],"max_size":8}
 ```
 
+### Review log
+
+Every selected live batch (danmaku and gifts) and its assistant reply is
+appended to:
+
+```text
+data/live-review.jsonl
+```
+
+Each line contains `ts`, `session_id`, `source`, `events` (including gift
+metadata) and `reply`. Export a readable review with:
+
+```powershell
+python scripts/export_live_review.py
+```
+
 The queue is connected to `NeteaseSongProvider`, which reads the local
 `neteasecli` session. Search uses the authenticated web API; the stream URL is
 obtained through the local `neteasecli` weapi helper. The URL is emitted as a

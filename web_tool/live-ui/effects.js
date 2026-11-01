@@ -89,6 +89,10 @@
   let replyContextEl = null;
   let replyContextTimer = 0;
 
+  let presenceEl = null;
+  let presenceState = "";
+  let presenceTimer = 0;
+
   let songQueue = [];
   let playlistEl = null;
   let playlistBody = null;
@@ -179,6 +183,121 @@
     blushLeft = layer.querySelector(".dsh-fx-blush-left");
     blushRight = layer.querySelector(".dsh-fx-blush-right");
     sparkle = layer.querySelector(".dsh-fx-sparkle");
+  }
+
+  function ensurePresenceBubble() {
+    if (presenceEl) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      #dsh-presence-bubble {
+        position: fixed;
+        z-index: 9997;
+        transform: translateX(-50%);
+        min-width: 82px;
+        padding: 7px 15px 8px;
+        border-radius: 15px 15px 15px 4px;
+        border: 1px solid rgba(151, 198, 238, .28);
+        background: linear-gradient(135deg, rgba(22, 33, 52, .92), rgba(44, 67, 96, .86));
+        color: #e8f4ff;
+        font: 13px/1.35 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+        letter-spacing: .03em;
+        text-align: center;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255,255,255,.08);
+        backdrop-filter: blur(9px);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity .25s ease, transform .25s ease;
+        white-space: nowrap;
+      }
+      #dsh-presence-bubble::after {
+        content: "";
+        position: absolute;
+        left: 15px;
+        bottom: -6px;
+        width: 11px;
+        height: 11px;
+        border-right: 1px solid rgba(151, 198, 238, .28);
+        border-bottom: 1px solid rgba(151, 198, 238, .28);
+        background: rgba(37, 57, 82, .9);
+        transform: rotate(45deg);
+      }
+      #dsh-presence-bubble .dsh-presence-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 7px;
+        border-radius: 50%;
+        vertical-align: 1px;
+        background: #8fd0ff;
+        box-shadow: 0 0 8px rgba(112, 198, 255, .8);
+      }
+      #dsh-presence-bubble[data-state="听歌中"] .dsh-presence-dot {
+        background: #b8a4ff;
+        box-shadow: 0 0 9px rgba(178, 158, 255, .9);
+      }
+      #dsh-presence-bubble[data-state="摸鱼中"] .dsh-presence-dot {
+        background: #8ff0c8;
+        box-shadow: 0 0 9px rgba(118, 240, 194, .9);
+      }
+      #dsh-presence-bubble .dsh-presence-text {
+        font-weight: 600;
+      }
+      #dsh-presence-bubble.show {
+        opacity: 1;
+      }
+    `;
+    document.head.appendChild(style);
+    presenceEl = document.createElement("div");
+    presenceEl.id = "dsh-presence-bubble";
+    presenceEl.innerHTML =
+      '<span class="dsh-presence-dot"></span><span class="dsh-presence-text"></span>';
+    document.body.appendChild(presenceEl);
+  }
+
+  function positionPresenceBubble() {
+    if (!presenceEl) return;
+    const stage =
+      document.querySelector("#live2d-internal-wrapper") ||
+      document.querySelector("canvas#canvas")?.parentElement;
+    if (!stage) {
+      presenceEl.style.left = "50%";
+      presenceEl.style.top = "18%";
+      return;
+    }
+    const rect = stage.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    presenceEl.style.left = `${rect.left + rect.width / 2}px`;
+    presenceEl.style.top = `${rect.top + rect.height * 0.13}px`;
+  }
+
+  function currentPresence() {
+    const speaking = Array.from(appAudios).some(
+      (audio) =>
+        !audio.paused &&
+        !audio.ended &&
+        audio.currentTime > 0 &&
+        audio.readyState > 1
+    );
+    if (speaking) return "摸鱼中";
+    if (songAudio && !songAudio.paused && !songAudio.ended) return "听歌中";
+    return "无聊中";
+  }
+
+  function updatePresenceBubble() {
+    ensurePresenceBubble();
+    positionPresenceBubble();
+    const next = window.__dshWorkMode ? "工作中" : currentPresence();
+    const textEl = presenceEl.querySelector(".dsh-presence-text");
+    textEl.textContent = next;
+    presenceEl.dataset.state = next;
+    if (presenceState !== next) {
+      presenceState = next;
+      presenceEl.style.transform = "translateX(-50%) translateY(-3px)";
+      requestAnimationFrame(() => {
+        presenceEl.style.transform = "translateX(-50%) translateY(0)";
+      });
+    }
+    presenceEl.classList.add("show");
   }
 
   function positionEffectLayer() {
@@ -366,8 +485,20 @@
       "transition:opacity .25s ease",
     ].join(";");
     playlistTitle = document.createElement("div");
-    playlistTitle.style.cssText =
-      "display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:6px;border-bottom:1px solid rgba(150,190,230,.14);color:#f1f7ff;font-weight:600;";
+    playlistTitle.style.cssText = [
+      "display:flex",
+      "align-items:center",
+      "justify-content:space-between",
+      "gap:8px",
+      "padding-bottom:6px",
+      "border-bottom:1px solid rgba(150,190,230,.14)",
+      "color:#f1f7ff",
+      "font-weight:600",
+      "cursor:grab",
+      "pointer-events:auto",
+      "user-select:none",
+      "touch-action:none",
+    ].join(";");
     playlistControls = document.createElement("div");
     playlistControls.style.cssText = [
       "display:flex",
@@ -385,6 +516,79 @@
     buildSongControls();
     playlistEl.appendChild(playlistBody);
     document.body.appendChild(playlistEl);
+    installPlaylistDrag();
+    restorePlaylistPosition();
+  }
+
+  let playlistDrag = null;
+
+  function clampPlaylist(left, top) {
+    const rect = playlistEl.getBoundingClientRect();
+    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+    const maxTop = Math.max(8, window.innerHeight - Math.min(rect.height, 260) - 8);
+    return {
+      left: Math.min(maxLeft, Math.max(8, left)),
+      top: Math.min(maxTop, Math.max(8, top)),
+    };
+  }
+
+  function applyPlaylistPosition(left, top) {
+    const position = clampPlaylist(left, top);
+    playlistEl.style.left = `${position.left}px`;
+    playlistEl.style.top = `${position.top}px`;
+    playlistEl.style.right = "auto";
+    return position;
+  }
+
+  function restorePlaylistPosition() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("dsh-playlist-pos") || "null");
+      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+        applyPlaylistPosition(saved.left, saved.top);
+      }
+    } catch (_) {
+      /* ignore malformed saved position */
+    }
+  }
+
+  function installPlaylistDrag() {
+    if (!playlistTitle || playlistTitle.dataset.dragReady) return;
+    playlistTitle.dataset.dragReady = "1";
+    playlistTitle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const rect = playlistEl.getBoundingClientRect();
+      playlistDrag = {
+        dx: event.clientX - rect.left,
+        dy: event.clientY - rect.top,
+      };
+      playlistTitle.style.cursor = "grabbing";
+      playlistTitle.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+    const move = (event) => {
+      if (!playlistDrag) return;
+      applyPlaylistPosition(
+        event.clientX - playlistDrag.dx,
+        event.clientY - playlistDrag.dy
+      );
+    };
+    const end = () => {
+      if (!playlistDrag) return;
+      playlistDrag = null;
+      playlistTitle.style.cursor = "grab";
+      const rect = playlistEl.getBoundingClientRect();
+      localStorage.setItem(
+        "dsh-playlist-pos",
+        JSON.stringify({ left: rect.left, top: rect.top })
+      );
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+    window.addEventListener("resize", () => {
+      const rect = playlistEl.getBoundingClientRect();
+      applyPlaylistPosition(rect.left, rect.top);
+    });
   }
 
   let prevButton = null;
@@ -610,7 +814,7 @@
     playlistEl.style.opacity = "1";
     playlistEl.style.visibility = "visible";
     playlistTitle.innerHTML =
-      `<span>🎵 歌单</span><span style="color:#8fb7dc;font-weight:400">${songQueue.length} 首</span>`;
+      `<span>⠿ 🎵 歌单</span><span style="color:#8fb7dc;font-weight:400">${songQueue.length} 首</span>`;
     if (currentSongTitle) {
       const found = songQueue.findIndex(
         (item) => String(item.title || "").trim() === currentSongTitle.trim()
@@ -942,7 +1146,12 @@
     ensureLayer();
     ensureReplyContext();
     ensurePlaylist();
+    ensurePresenceBubble();
     positionEffectLayer();
+    updatePresenceBubble();
+    clearInterval(presenceTimer);
+    presenceTimer = setInterval(updatePresenceBubble, 500);
+    window.addEventListener("resize", updatePresenceBubble);
     replaceThinkingLabels();
     const observer = new MutationObserver(() => {
       replaceThinkingLabels();

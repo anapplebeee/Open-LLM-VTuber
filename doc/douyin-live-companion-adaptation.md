@@ -284,7 +284,7 @@ ws://127.0.0.1:12393/client-ws
 /live-view-ws 初始 set-model-and-conf -> deepseek
 /live-ws douyin-event -> /live-view-ws 收到 audio
 fake dyhub -> scripts/dyhub_bridge.py -> OLV -> live-view 收到 audio
-90 tests passed
+91 tests passed
 ```
 
 浏览器画面仍未做自动截图验证；`live-view.html` 的 Live2D canvas 需要在真实浏览器/OBS 中确认。

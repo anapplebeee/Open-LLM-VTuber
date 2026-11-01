@@ -1,6 +1,7 @@
 from typing import Union, List, Dict, Any, Optional
 import asyncio
 import json
+import time
 from loguru import logger
 import numpy as np
 
@@ -23,6 +24,8 @@ from .song_command import (
 )
 from ..chat_history_manager import store_message
 from ..service_context import ServiceContext
+from ..live.events import RoomEvent, RoomUser
+from ..live.review import default_review_logger
 from ..live.songbook import SongRequestQueue, detect_song_control
 
 # Import necessary types from agent outputs
@@ -201,6 +204,28 @@ async def process_single_conversation(
             websocket_send=websocket_send,
             client_uid=client_uid,
         )
+
+        if reply_text and full_response:
+            now_ms = int(time.time() * 1000)
+            review_event = RoomEvent(
+                id=f"normal-{client_uid}-{now_ms}",
+                type="chat",
+                platform="local",
+                received_at_ms=now_ms,
+                user=RoomUser(
+                    id=client_uid,
+                    name=context.character_config.human_name or "观众",
+                ),
+                content=reply_text[:500],
+            )
+            await asyncio.to_thread(
+                default_review_logger.record,
+                [review_event],
+                full_response,
+                session_id=f"client-{client_uid}",
+                source="normal",
+                now_ms=now_ms,
+            )
 
         if context.history_uid and full_response:  # Check full_response before storing
             store_message(

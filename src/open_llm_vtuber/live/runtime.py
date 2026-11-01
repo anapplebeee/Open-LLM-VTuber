@@ -26,6 +26,7 @@ from .events import LiveBatch, RoomEvent
 from .memory import MemoryManager
 from .notebook import LiveNotebook
 from .proactive import ProactiveScheduler
+from .review import LiveReviewLogger
 from .rundown import RundownState
 from .song_player import NeteaseSongProvider
 from .songbook import SongRequestQueue, detect_song_control
@@ -49,6 +50,7 @@ class LiveSession:
         on_batch_end: Callable[[], Awaitable[None]] | None = None,
         on_song: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_reply: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        review_logger: LiveReviewLogger | None = None,
         song_provider: NeteaseSongProvider | None = None,
         store: LiveStore | None = None,
         recap_writer: Any = None,
@@ -68,6 +70,7 @@ class LiveSession:
         self.on_batch_end = on_batch_end
         self.on_song = on_song
         self.on_reply = on_reply
+        self.review_logger = review_logger or LiveReviewLogger()
         self.song_provider = song_provider or NeteaseSongProvider()
         self._pending_song_result: Any = None
         self._pending_song_control: str | None = None
@@ -522,6 +525,15 @@ class LiveSession:
                 if text:
                     assistant_parts.append(str(text))
                 await self.on_output(output)
+            if batch.events or assistant_parts:
+                await asyncio.to_thread(
+                    self.review_logger.record,
+                    batch.events,
+                    "".join(assistant_parts),
+                    session_id=self.session_id,
+                    source="live",
+                    now_ms=self._now_ms(),
+                )
             if self.store and assistant_parts:
                 await asyncio.to_thread(
                     self.store.append_chat,
