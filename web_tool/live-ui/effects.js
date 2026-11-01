@@ -2034,6 +2034,15 @@
         url: item.url || existing.url || "",
       };
     });
+    if (!currentSongTitle && !songAudio && !pendingSong && songQueue.length) {
+      // The queue snapshot can arrive before its first playable payload.
+      // Recover automatically instead of leaving the queue visually stuck.
+      setTimeout(() => {
+        if (!currentSongTitle && !songAudio && !pendingSong && songQueue.length) {
+          playQueueFrom(0);
+        }
+      }, 600);
+    }
     if (currentSongTitle) {
       currentQueueIndex = currentEntryId
         ? songQueue.findIndex(
@@ -2071,6 +2080,53 @@
         /* already stopped */
       }
     }
+  }
+
+  function songDataForItem(item) {
+    if (!item) return null;
+    const title = String(item.title || "").trim();
+    const cached = songData.get(title);
+    if (cached && cached.url) return cached;
+    if (item.url) {
+      return {
+        ...item,
+        title,
+        url: item.url,
+        duration_ms: item.duration_ms || 0,
+      };
+    }
+    return null;
+  }
+
+  function requestPlayQueueItem(index) {
+    const item = songQueue[index];
+    if (!item) return false;
+    const title = String(item.title || "").trim();
+    const sent = window.__dshSendMessage?.({
+      type: "song-play-target",
+      entry_id: String(item.id || ""),
+      title,
+    });
+    if (sent) showSongChip("正在准备这首歌…");
+    return Boolean(sent);
+  }
+
+  function playQueueFrom(index) {
+    // Never let a broken first track wedge the whole queue: walk forward to
+    // the first track with a known URL, otherwise ask the backend to resolve
+    // the first candidate on demand.
+    for (let i = Math.max(0, index); i < songQueue.length; i += 1) {
+      const data = songDataForItem(songQueue[i]);
+      if (data?.url) {
+        currentQueueIndex = i;
+        playSong(data);
+        return true;
+      }
+    }
+    if (index < songQueue.length) {
+      return requestPlayQueueItem(Math.max(0, index));
+    }
+    return false;
   }
 
   function playAdjacent(step, autoAdvance) {
@@ -2172,15 +2228,9 @@
       songArtist = "";
       songDurationMs = 0;
       currentSongTitle = "";
-      const nextIndex = removedAt >= 0 ? removedAt : Math.max(0, currentQueueIndex);
-      const nextItem = songQueue[nextIndex];
-      const nextData = nextItem
-        ? songData.get(String(nextItem.title || "").trim())
-        : null;
-      if (nextData && nextData.url) {
-        currentQueueIndex = nextIndex;
-        playSong(nextData);
-      } else {
+      const nextIndex =
+        removedAt >= 0 ? removedAt : Math.max(0, currentQueueIndex);
+      if (!playQueueFrom(nextIndex)) {
         currentQueueIndex = -1;
         hideSongChip();
         renderPlaylist();
@@ -2189,8 +2239,18 @@
       }
     });
     audio.addEventListener("error", () => {
-      showSongChip("这首歌暂时播放失败");
+      if (songAudio !== audio) return;
+      songAudio = null;
+      const failedTitle = currentSongTitle;
+      const failedEntryId = currentEntryId;
+      notifySongFinished(failedTitle, failedEntryId);
+      const removedAt = dropFinishedSong(failedTitle, failedEntryId);
+      currentEntryId = "";
+      currentSongTitle = "";
+      currentQueueIndex = -1;
+      renderPlaylist();
       updateSongControls();
+      playQueueFrom(removedAt >= 0 ? removedAt : 0);
     });
     audio.play().catch(() => {
       showSongChip("点击页面后重试播放");

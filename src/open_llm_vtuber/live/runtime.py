@@ -12,6 +12,7 @@ import inspect
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
 from loguru import logger
@@ -35,6 +36,18 @@ from .state import EmotionEngine, EmotionState, StreamState, ViewerRegistry
 from .store import LiveStore
 
 OutputHandler = Callable[[Any], Awaitable[None]]
+
+
+_WEEKDAYS_ZH = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+
+
+def _current_local_time_text() -> str:
+    now = datetime.now().astimezone()
+    return (
+        now.strftime("%Y-%m-%d %H:%M:%S")
+        + " "
+        + _WEEKDAYS_ZH[now.weekday()]
+    )
 
 
 _INTERNAL_REPLY_MARKERS = (
@@ -494,6 +507,10 @@ class LiveSession:
             events_text = "\n".join(
                 event.to_agent_text() for event in batch.events
             ) or "本轮没有新的观众事件，按节目单主动推进。"
+            context_events_text = (
+                events_text
+                + f"\n【系统时间】{_current_local_time_text()}"
+            )
             meme_hint = self.meme_library.hint_for_text(events_text)
             if self.store and batch.events:
                 # Keep the user side of the dialogue in live_chat, otherwise a
@@ -524,7 +541,7 @@ class LiveSession:
                 emotion=self.emotion_state,
                 stream=self.stream_state,
                 viewer=viewer,
-                events_text=events_text,
+                events_text=context_events_text,
                 rundown_text=(
                     self.rundown.context_text() if self.rundown else ""
                 ),
