@@ -583,7 +583,43 @@
     document.body.appendChild(replyContextEl);
   }
 
+  let subtitlePinWrapper = null;
+  let subtitlePinObserver = null;
+
+  function findSubtitleWrapper(box) {
+    let node = box;
+    for (let depth = 0; node && depth < 4; depth += 1) {
+      if (getComputedStyle(node).position === "absolute") return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function pinSubtitlePosition() {
+    const box = findSubtitleBox();
+    if (!box) return;
+    const wrapper = findSubtitleWrapper(box);
+    if (!wrapper) return;
+    if (subtitlePinWrapper !== wrapper) {
+      subtitlePinObserver?.disconnect();
+      subtitlePinWrapper = wrapper;
+      subtitlePinObserver = new MutationObserver(() => {
+        if (getComputedStyle(wrapper).bottom !== "135px") {
+          wrapper.style.setProperty("bottom", "135px", "important");
+        }
+      });
+      subtitlePinObserver.observe(wrapper, {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
+    }
+    if (getComputedStyle(wrapper).bottom !== "135px") {
+      wrapper.style.setProperty("bottom", "135px", "important");
+    }
+  }
+
   function syncReplyContextPosition() {
+    pinSubtitlePosition();
     if (!replyContext || !replyContextEl) return;
     const box = findSubtitleBox();
     if (!box) return;
@@ -1465,6 +1501,7 @@
     ensurePlaylist();
     ensurePresenceBubble();
     enforceCozyBackground();
+    pinSubtitlePosition();
     positionEffectLayer();
     updatePresenceBubble();
     clearInterval(presenceTimer);
