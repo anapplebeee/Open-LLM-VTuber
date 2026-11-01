@@ -14,7 +14,6 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
 
 from .live.registry import get_current_live_session
 
@@ -45,7 +44,13 @@ async def _read_events(limit: int = 40) -> list[dict[str, Any]]:
     if not REVIEW_PATH.exists():
         return []
     try:
-        lines = REVIEW_PATH.read_text(encoding="utf-8").splitlines()
+        # Dashboard polling must not load an ever-growing review log into RAM.
+        with REVIEW_PATH.open("rb") as handle:
+            handle.seek(0, 2)
+            size = handle.tell()
+            handle.seek(max(0, size - 256 * 1024))
+            text = handle.read().decode("utf-8", "replace")
+        lines = text.splitlines()
     except OSError:
         return []
     rows: list[dict[str, Any]] = []
@@ -123,6 +128,9 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
             rooms_payload = await _dyhub("/api/rooms")
             rooms = rooms_payload.get("rooms") or []
             stats = await _dyhub("/api/stats")
+            # Avoid duplicating the full room list inside the stats payload.
+            if isinstance(stats, dict):
+                stats = {key: value for key, value in stats.items() if key != "rooms"}
             checks["dyhub"] = {"ok": True}
         except Exception as exc:  # noqa: BLE001
             checks["dyhub"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
