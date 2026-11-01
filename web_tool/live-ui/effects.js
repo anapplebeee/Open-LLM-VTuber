@@ -413,14 +413,35 @@
     ensureReplyContext();
     replyContextEl.textContent = `回复：${replyContext}`;
     const box = findSubtitleBox();
-    let anchor = box?.getBoundingClientRect();
-    if (!anchor || !anchor.width) {
-      const stage =
-        document.querySelector("#live2d-internal-wrapper") ||
-        document.querySelector("canvas#canvas")?.parentElement;
-      anchor = stage?.getBoundingClientRect();
+    if (box) {
+      // Put the reply quote inside the subtitle container, in its top-left
+      // corner, so it shares the subtitle frame instead of floating above it.
+      replyContextEl.style.cssText = [
+        "display:inline-flex",
+        "align-self:flex-start",
+        "max-width:calc(100% - 24px)",
+        "margin:6px 0 0 12px",
+        "padding:2px 8px",
+        "border-left:2px solid rgba(120,170,215,.85)",
+        "border-radius:4px",
+        "background:rgba(15,22,36,.42)",
+        "color:#b4d2ea",
+        "font:11px/1.4 system-ui,sans-serif",
+        "white-space:nowrap",
+        "overflow:hidden",
+        "text-overflow:ellipsis",
+        "pointer-events:none",
+      ].join(";");
+      box.insertBefore(replyContextEl, box.firstChild);
+      return;
     }
-    if (!anchor || !anchor.width) return;
+    // Fallback before the subtitle container has mounted: place it at the
+    // expected subtitle left/top area rather than at the chat list.
+    const stage =
+      document.querySelector("#live2d-internal-wrapper") ||
+      document.querySelector("canvas#canvas")?.parentElement;
+    const rect = stage?.getBoundingClientRect();
+    if (!rect || !rect.width) return;
     replyContextEl.style.cssText = [
       "position:fixed",
       "z-index:9997",
@@ -428,7 +449,7 @@
       "max-width:min(560px,72vw)",
       "padding:3px 10px",
       "border-left:2px solid rgba(120,170,215,.85)",
-      "border-radius:5px 5px 0 0",
+      "border-radius:4px",
       "background:rgba(15,22,36,.72)",
       "color:#b4d2ea",
       "font:11px/1.4 system-ui,sans-serif",
@@ -437,8 +458,8 @@
       "text-overflow:ellipsis",
       "pointer-events:none",
     ].join(";");
-    replyContextEl.style.left = `${anchor.left}px`;
-    replyContextEl.style.top = `${Math.max(8, anchor.top - 26)}px`;
+    replyContextEl.style.left = `${rect.left + rect.width / 2 - 200}px`;
+    replyContextEl.style.top = `${rect.bottom - 220}px`;
     document.body.appendChild(replyContextEl);
   }
 
