@@ -535,6 +535,60 @@
     document.body.appendChild(bgmAudio);
   }
 
+  let audioUnlockHint = null;
+
+  function removeAudioUnlockHint() {
+    if (audioUnlockHint) {
+      audioUnlockHint.remove();
+      audioUnlockHint = null;
+    }
+  }
+
+  function unlockAudioPlayback() {
+    bgmAutoplayBlocked = false;
+    removeAudioUnlockHint();
+    syncBgm();
+    for (const audio of appAudios) {
+      if (!audio.paused) continue;
+      audio.play().catch(() => {});
+    }
+  }
+
+  function showAudioUnlockHint() {
+    if (audioUnlockHint || !isLiveViewPage) return;
+    const button = document.createElement("button");
+    button.id = "dsh-audio-unlock";
+    button.textContent = "🔊 点击开启声音";
+    button.style.cssText = [
+      "position:fixed",
+      "left:50%",
+      "top:24px",
+      "transform:translateX(-50%)",
+      "z-index:2147483002",
+      "padding:9px 18px",
+      "border-radius:999px",
+      "border:1px solid rgba(180,215,255,.5)",
+      "background:rgba(14,25,42,.92)",
+      "color:#f2f9ff",
+      "font:600 14px/1.2 'Microsoft YaHei',sans-serif",
+      "cursor:pointer",
+      "pointer-events:auto",
+      "box-shadow:0 8px 30px rgba(0,0,0,.35)",
+    ].join(";");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      unlockAudioPlayback();
+    });
+    document.body.appendChild(button);
+    audioUnlockHint = button;
+    document.addEventListener(
+      "pointerdown",
+      () => unlockAudioPlayback(),
+      { once: true, capture: true }
+    );
+  }
+
   function bgmRequestedSongActive() {
     return Boolean(
       songAudio || pendingSong || currentSongTitle || songQueue.length > 0
@@ -559,6 +613,7 @@
     if (bgmAudio.paused && !bgmAutoplayBlocked) {
       bgmAudio.play().catch(() => {
         bgmAutoplayBlocked = true;
+        showAudioUnlockHint();
       });
     }
   }
@@ -2392,6 +2447,9 @@
     if (isLiveViewPage) {
       syncBgm();
       setInterval(syncBgm, 300);
+      setTimeout(() => {
+        if (!navigator.userActivation?.hasBeenActive) showAudioUnlockHint();
+      }, 1800);
       document.addEventListener(
         "pointerdown",
         () => {
