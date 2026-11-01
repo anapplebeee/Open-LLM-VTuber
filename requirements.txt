@@ -1023,6 +1023,8 @@ pyreadline3==3.5.4 ; sys_platform == 'win32'
     # via humanfriendly
 pysbd==0.3.4
     # via open-llm-vtuber
+psutil==7.2.2
+    # via open-llm-vtuber
 python-dotenv==1.2.1
     # via
     #   mcp
