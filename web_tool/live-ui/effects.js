@@ -27,15 +27,174 @@
 
   const NativeAudio = window.Audio;
   const appAudios = new Set();
+  let voiceVolume = 1.4;
+  try {
+    const savedVoice = Number(localStorage.getItem("dsh-voice-volume"));
+    if (Number.isFinite(savedVoice) && savedVoice > 0.2 && savedVoice <= 2.5) {
+      voiceVolume = savedVoice;
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    const queryVoice = Number(
+      new URLSearchParams(window.location.search).get("voice")
+    );
+    if (Number.isFinite(queryVoice) && queryVoice > 0.2 && queryVoice <= 2.5) {
+      voiceVolume = queryVoice;
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  let voiceUnlocked = false;
+  let voiceContext = null;
+  let voiceGainNode = null;
+  let voiceToastTimer = 0;
+  const voiceRouted = new WeakSet();
+
+  function clampVoiceVolume(value) {
+    return Math.max(0.2, Math.min(2.5, Number(value) || 1.4));
+  }
+
+  function ensureVoiceContext() {
+    if (!voiceUnlocked) return null;
+    try {
+      if (!voiceContext) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        voiceContext = new Ctx();
+        voiceGainNode = voiceContext.createGain();
+        voiceGainNode.gain.value = voiceVolume;
+        voiceGainNode.connect(voiceContext.destination);
+      }
+      if (voiceContext.state === "suspended") {
+        voiceContext.resume().catch(() => {});
+      }
+      return voiceContext;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function routeVoiceAudio(audio) {
+    if (!audio || voiceRouted.has(audio)) return;
+    if (!ensureVoiceContext() || !voiceGainNode) {
+      audio.volume = Math.min(1, voiceVolume);
+      return;
+    }
+    try {
+      const source = voiceContext.createMediaElementSource(audio);
+      source.connect(voiceGainNode);
+      voiceRouted.add(audio);
+    } catch (_) {
+      // The app may already route this element through WebAudio; keep it
+      // audible instead of muting it.
+      audio.volume = Math.min(1, voiceVolume);
+    }
+  }
+
+  function applyVoiceVolume() {
+    if (voiceGainNode) voiceGainNode.gain.value = voiceVolume;
+    for (const audio of appAudios) {
+      if (voiceRouted.has(audio)) continue;
+      if (voiceUnlocked) {
+        routeVoiceAudio(audio);
+      } else {
+        audio.volume = Math.min(1, voiceVolume);
+      }
+    }
+  }
+
+  function showVoiceToast() {
+    let toast = document.getElementById("dsh-voice-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "dsh-voice-toast";
+      toast.style.cssText = [
+        "position:fixed",
+        "left:50%",
+        "bottom:28px",
+        "transform:translateX(-50%)",
+        "z-index:10002",
+        "padding:6px 13px",
+        "border-radius:9px",
+        "background:rgba(8,13,22,.82)",
+        "border:1px solid rgba(151,198,238,.28)",
+        "color:#e8f4ff",
+        "font:13px/1.3 'Microsoft YaHei',sans-serif",
+        "pointer-events:none",
+        "backdrop-filter:blur(8px)",
+      ].join(";");
+      document.body.appendChild(toast);
+    }
+    toast.textContent = `人物音量 ${Math.round(voiceVolume * 100)}%`;
+    toast.style.display = "block";
+    clearTimeout(voiceToastTimer);
+    voiceToastTimer = setTimeout(() => {
+      toast.style.display = "none";
+    }, 1500);
+  }
+
+  function setVoiceVolume(value, notify = true) {
+    voiceVolume = clampVoiceVolume(value);
+    try {
+      localStorage.setItem("dsh-voice-volume", String(voiceVolume));
+    } catch (_) {
+      /* ignore */
+    }
+    applyVoiceVolume();
+    if (notify) showVoiceToast();
+  }
+
+  window.__dshVoice = {
+    get volume() {
+      return voiceVolume;
+    },
+    set: setVoiceVolume,
+    state: () => voiceContext?.state || "locked",
+  };
+
   if (NativeAudio) {
     class TrackedAudio extends NativeAudio {
       constructor(...args) {
         super(...args);
         appAudios.add(this);
+        this.addEventListener("play", () => routeVoiceAudio(this));
         this.addEventListener("ended", () => appAudios.delete(this));
       }
     }
     window.Audio = TrackedAudio;
+  }
+
+  function installVoiceControls() {
+    const unlock = () => {
+      if (voiceUnlocked) return;
+      voiceUnlocked = true;
+      ensureVoiceContext();
+      applyVoiceVolume();
+    };
+    document.addEventListener("pointerdown", unlock, { passive: true });
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        const tag = event.target?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (event.key === "]" || event.key === "}") {
+          setVoiceVolume(voiceVolume + 0.1);
+        } else if (event.key === "[" || event.key === "{") {
+          setVoiceVolume(voiceVolume - 0.1);
+        } else if (event.key === "\\" || event.key === "|") {
+          setVoiceVolume(1.4);
+        } else {
+          return;
+        }
+        event.preventDefault();
+      },
+      true
+    );
+    // Apply the saved value as a fallback until the first user gesture, when
+    // the WebAudio gain path can be unlocked safely.
+    for (const audio of appAudios) audio.volume = Math.min(1, voiceVolume);
   }
 
   const liveSockets = [];
@@ -125,6 +284,7 @@
   let presenceTimer = 0;
   let presenceManualPosition = null;
   let presenceDrag = null;
+  let globalSubtitleDrag = null;
   let expressionTimers = [];
 
   let songQueue = [];
@@ -784,6 +944,98 @@
       node = node.parentElement;
     }
     return false;
+  }
+
+  function subtitleBoxAtPoint(x, y) {
+    let elements = [];
+    try {
+      elements = document.elementsFromPoint(x, y) || [];
+    } catch (_) {
+      elements = [];
+    }
+    for (const el of elements) {
+      if (
+        el.dataset &&
+        el.dataset.dshSubtitleBox === "1" &&
+        !hasMarkedSubtitleAncestor(el)
+      ) {
+        return el;
+      }
+    }
+    const target = document.elementFromPoint(x, y);
+    const closest = target?.closest?.('[data-dsh-subtitle-box="1"]');
+    return closest && !hasMarkedSubtitleAncestor(closest) ? closest : null;
+  }
+
+  function installGlobalSubtitleDrag() {
+    // OBS' CEF sometimes delivers the pointer to an overlay above the
+    // subtitle. Capture the gesture at document level and resolve the outer
+    // subtitle box under the pointer, so dragging is independent of that DOM
+    // stacking detail.
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (event.button !== 0) return;
+        const target = event.target;
+        if (
+          target?.closest?.(
+            "button,input,select,textarea,a,[data-dsh-presence-bubble]"
+          )
+        ) {
+          return;
+        }
+        const box = subtitleBoxAtPoint(event.clientX, event.clientY);
+        if (!box) return;
+        globalSubtitleDrag = {
+          box,
+          startX: event.clientX,
+          startY: event.clientY,
+          x: Number(box.dataset.dshDragX || 0),
+          y: Number(box.dataset.dshDragY || 0),
+        };
+        box.style.cursor = "grabbing";
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      true
+    );
+    document.addEventListener(
+      "pointermove",
+      (event) => {
+        if (!globalSubtitleDrag) return;
+        const { box } = globalSubtitleDrag;
+        const x = Math.max(
+          -900,
+          Math.min(900, globalSubtitleDrag.x + event.clientX - globalSubtitleDrag.startX)
+        );
+        const y = Math.max(
+          -700,
+          Math.min(700, globalSubtitleDrag.y + event.clientY - globalSubtitleDrag.startY)
+        );
+        applySubtitleOffset(box, x, y);
+        event.preventDefault();
+      },
+      true
+    );
+    const end = () => {
+      if (!globalSubtitleDrag) return;
+      const { box } = globalSubtitleDrag;
+      globalSubtitleDrag = null;
+      box.style.cursor = "grab";
+      try {
+        localStorage.setItem(
+          "dsh-subtitle-offset",
+          JSON.stringify({
+            x: Number(box.dataset.dshDragX || 0),
+            y: Number(box.dataset.dshDragY || 0),
+          })
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    document.addEventListener("pointerup", end, true);
+    document.addEventListener("pointercancel", end, true);
   }
 
   function compactSubtitleBox(box) {
@@ -1921,6 +2173,8 @@
     ensureReplyContext();
     ensurePlaylist();
     ensurePresenceBubble();
+    installVoiceControls();
+    installGlobalSubtitleDrag();
     enforceCozyBackground();
     adaptLiveViewLayout();
     ensureStageControls();
