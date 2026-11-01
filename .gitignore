@@ -4,6 +4,8 @@ conf.yaml
 # ignore non-default background images
 /backgrounds/*
 !/backgrounds/README.md
+!/backgrounds/cozy-live-room.png
+!/backgrounds/cozy-live-room.svg
 
 # ignore non-default live2d models
 /live2d-models/*

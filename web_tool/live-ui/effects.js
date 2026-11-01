@@ -9,6 +9,19 @@
   if (window.__dshLiveEffectsInstalled) return;
   window.__dshLiveEffectsInstalled = true;
 
+  try {
+    const savedBackground = localStorage.getItem("backgroundUrl") || "";
+    if (
+      !savedBackground ||
+      savedBackground.includes("ceiling-window-room-night") ||
+      savedBackground.includes("cityscape")
+    ) {
+      localStorage.setItem("backgroundUrl", "/bg/cozy-live-room.png");
+    }
+  } catch (_) {
+    /* localStorage can be unavailable in privacy mode */
+  }
+
   const NativeAudio = window.Audio;
   const appAudios = new Set();
   if (NativeAudio) {
@@ -199,6 +212,18 @@
     sparkle = layer.querySelector(".dsh-fx-sparkle");
   }
 
+  function enforceCozyBackground() {
+    for (const img of document.querySelectorAll("img")) {
+      const src = img.currentSrc || img.src || "";
+      if (
+        /\/bg\/(?:ceiling-window-room-night|cityscape)/.test(src) &&
+        img.getBoundingClientRect().width > 500
+      ) {
+        img.src = "/bg/cozy-live-room.png";
+      }
+    }
+  }
+
   function ensurePresenceBubble() {
     if (presenceEl) return;
     const style = document.createElement("style");
@@ -299,6 +324,7 @@
 
   function updatePresenceBubble() {
     ensurePresenceBubble();
+    enforceCozyBackground();
     positionPresenceBubble();
     const next = window.__dshWorkMode ? "工作中" : currentPresence();
     const textEl = presenceEl.querySelector(".dsh-presence-text");
@@ -365,6 +391,48 @@
     document.body.appendChild(replyContextEl);
   }
 
+  function compactSubtitleBox(box) {
+    if (!box) return;
+    const text = box.querySelector("p");
+    if (text) {
+      text.style.setProperty("font-size", "clamp(16px, 1.05vw, 20px)", "important");
+      text.style.setProperty("line-height", "1.35", "important");
+      text.style.setProperty("font-weight", "500", "important");
+      text.style.setProperty("letter-spacing", ".015em", "important");
+    }
+    box.dataset.dshSubtitleBox = "1";
+    box.style.setProperty("width", "fit-content", "important");
+    box.style.setProperty("min-width", "0", "important");
+    box.style.setProperty("max-width", "min(68%, 720px)", "important");
+    box.style.setProperty("margin", "0 auto", "important");
+    box.style.setProperty("padding", "7px 17px", "important");
+    box.style.setProperty("border-radius", "10px", "important");
+    box.style.setProperty("border", "1px solid rgba(196, 222, 255, .13)", "important");
+    box.style.setProperty("background", "rgba(8, 13, 22, .55)", "important");
+    box.style.setProperty("box-shadow", "0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06)", "important");
+    box.style.setProperty("backdrop-filter", "blur(9px)", "important");
+  }
+
+  function styleSubtitleBoxes() {
+    for (const el of document.querySelectorAll("div")) {
+      if (el.dataset && el.dataset.dshSubtitleBox === "1") {
+        compactSubtitleBox(el);
+        continue;
+      }
+      const style = getComputedStyle(el);
+      const bg = style.backgroundColor.replace(/\s+/g, "");
+      const text = (el.textContent || "").trim();
+      if (
+        bg === "rgba(0,0,0,0.7)" &&
+        text.length >= 2 &&
+        text.length <= 160 &&
+        el.getBoundingClientRect().bottom > window.innerHeight * 0.55
+      ) {
+        compactSubtitleBox(el);
+      }
+    }
+  }
+
   function findSubtitleBox() {
     const statusLabels = new Set([
       "偷看弹幕中",
@@ -410,9 +478,9 @@
       const bg = style.backgroundColor.replace(/\s+/g, "");
       const text = (el.textContent || "").trim();
       if (
-        bg === "rgba(0,0,0,0.7)" &&
-        rect.width >= 280 &&
-        rect.height >= 30 &&
+        (el.dataset?.dshSubtitleBox === "1" || bg === "rgba(0,0,0,0.7)") &&
+        (el.dataset?.dshSubtitleBox === "1" || rect.width >= 160) &&
+        rect.height >= 24 &&
         rect.height <= 320 &&
         rect.bottom > window.innerHeight * 0.55 &&
         text.length >= 2 &&
@@ -459,29 +527,31 @@
     replyContextEl.textContent = `回复：${replyContext}`;
     const box = findSubtitleBox();
     if (box) {
-      // Put the reply quote inside the subtitle container, flush with the
-      // frame's top-left corner. The subtitle box has 15px/30px padding, so
-      // pull the quote back by exactly that padding instead of sitting inside
-      // the text content area.
-      const boxStyle = getComputedStyle(box);
-      const padLeft = parseFloat(boxStyle.paddingLeft) || 0;
-      const padTop = parseFloat(boxStyle.paddingTop) || 0;
+      // Keep the reply quote as a separate small layer above the subtitle
+      // frame. It stays left-aligned with the frame but no longer inflates
+      // the subtitle box.
+      compactSubtitleBox(box);
+      const rect = box.getBoundingClientRect();
       replyContextEl.style.cssText = [
-        "display:inline-flex",
-        "align-self:flex-start",
-        `margin:${-padTop + 1}px 0 4px ${-padLeft + 1}px`,
+        "position:fixed",
+        "z-index:9998",
+        "box-sizing:border-box",
+        "max-width:min(520px, 68vw)",
         "padding:2px 8px",
-        "border-left:2px solid rgba(120,170,215,.85)",
-        "border-radius:4px",
-        "background:rgba(15,22,36,.42)",
-        "color:#b4d2ea",
-        "font:11px/1.4 system-ui,sans-serif",
+        "border-left:2px solid rgba(145, 190, 235, .8)",
+        "border-radius:5px",
+        "background:rgba(7, 12, 20, .72)",
+        "color:#c9def2",
+        "font:10.5px/1.4 system-ui,sans-serif",
         "white-space:nowrap",
         "overflow:hidden",
         "text-overflow:ellipsis",
         "pointer-events:none",
+        "box-shadow:0 4px 14px rgba(0,0,0,.2)",
       ].join(";");
-      box.insertBefore(replyContextEl, box.firstChild);
+      replyContextEl.style.left = `${rect.left}px`;
+      replyContextEl.style.top = `${Math.max(8, rect.top - 23)}px`;
+      document.body.appendChild(replyContextEl);
       return;
     }
     // Fallback before the subtitle container has mounted: place it at the
@@ -493,19 +563,20 @@
     if (!rect || !rect.width) return;
     replyContextEl.style.cssText = [
       "position:fixed",
-      "z-index:9997",
+      "z-index:9998",
       "box-sizing:border-box",
-      "max-width:min(560px,72vw)",
-      "padding:3px 10px",
-      "border-left:2px solid rgba(120,170,215,.85)",
-      "border-radius:4px",
-      "background:rgba(15,22,36,.72)",
-      "color:#b4d2ea",
-      "font:11px/1.4 system-ui,sans-serif",
+      "max-width:min(520px, 68vw)",
+      "padding:2px 8px",
+      "border-left:2px solid rgba(145, 190, 235, .8)",
+      "border-radius:5px",
+      "background:rgba(7, 12, 20, .72)",
+      "color:#c9def2",
+      "font:10.5px/1.4 system-ui,sans-serif",
       "white-space:nowrap",
       "overflow:hidden",
       "text-overflow:ellipsis",
       "pointer-events:none",
+      "box-shadow:0 4px 14px rgba(0,0,0,.2)",
     ].join(";");
     replyContextEl.style.left = `${rect.left + rect.width / 2 - 200}px`;
     replyContextEl.style.top = `${rect.bottom - 220}px`;
@@ -1243,12 +1314,14 @@
   let tagSanitizeFrame = 0;
   function watchRenderedTags() {
     sanitizeRenderedTags();
+    styleSubtitleBoxes();
     if (!window.MutationObserver) return;
     const observer = new MutationObserver(() => {
       if (tagSanitizeFrame) return;
       tagSanitizeFrame = requestAnimationFrame(() => {
         tagSanitizeFrame = 0;
         sanitizeRenderedTags();
+        styleSubtitleBoxes();
       });
     });
     observer.observe(document.body, {
@@ -1371,11 +1444,15 @@
     ensureReplyContext();
     ensurePlaylist();
     ensurePresenceBubble();
+    enforceCozyBackground();
     positionEffectLayer();
     updatePresenceBubble();
     clearInterval(presenceTimer);
     presenceTimer = setInterval(updatePresenceBubble, 500);
     window.addEventListener("resize", updatePresenceBubble);
+    window.addEventListener("resize", () => {
+      if (replyContext) attachReplyContext();
+    });
     replaceThinkingLabels();
     watchRenderedTags();
     const observer = new MutationObserver(() => {
