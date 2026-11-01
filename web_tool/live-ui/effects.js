@@ -476,7 +476,10 @@
     stage.style.setProperty("top", "0", "important");
     stage.style.setProperty("width", "100vw", "important");
     stage.style.setProperty("height", "100vh", "important");
-    stage.style.setProperty("z-index", "5", "important");
+    // Keep the Live2D stage below the app/subtitle overlay. Raising the
+    // subtitle's ancestors instead broke the subtitle layout.
+    stage.style.setProperty("z-index", "1", "important");
+    if (main) main.style.setProperty("z-index", "10", "important");
     applyLiveStageTransform();
     const resizeKey = `${window.innerWidth}x${window.innerHeight}`;
     if (liveResizeKey !== resizeKey) {
@@ -1331,7 +1334,6 @@
   function pinSubtitlePosition() {
     const box = findSubtitleBox();
     if (!box) return;
-    raiseSubtitleLayer(box);
     const wrapper = findSubtitleWrapper(box);
     if (!wrapper) return;
     if (subtitlePinWrapper !== wrapper) {
@@ -1353,8 +1355,7 @@
     // The Live2D stage has its own stacking context. Keep the subtitle
     // wrapper above it; a high z-index on the inner text box alone cannot
     // escape a lower ancestor stacking context.
-    wrapper.style.setProperty("z-index", "60", "important");
-    wrapper.style.setProperty("position", "absolute", "important");
+    wrapper.style.setProperty("z-index", "30", "important");
   }
 
   function syncReplyContextPosition() {
@@ -2238,9 +2239,10 @@
     // One-time recovery from offsets saved by the earlier buggy nested drag:
     // reset the subtitle to its normal bottom-center position on this build.
     try {
-      const resetKey = "dsh-subtitle-reset-v42";
+      const resetKey = "dsh-subtitle-reset-v44";
       if (!localStorage.getItem(resetKey)) {
         localStorage.removeItem("dsh-subtitle-offset");
+        localStorage.removeItem("dsh-presence-pos");
         localStorage.setItem(resetKey, "1");
       }
     } catch (_) {
