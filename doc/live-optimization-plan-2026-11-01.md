@@ -138,6 +138,8 @@ live-view.jsx
 - [x] 1970 测试时间戳拦截
 - [x] 历史测试 review 清理工具
 - [x] 直播健康检查脚本
+- [x] CABLE 音频 RMS 检查脚本（本次实测 RMS 0.005802）
+- [x] dyhub 独立房间 Cookie 设置脚本
 - [x] Python 108 tests
 
 ### Phase 2：播放与前端结构
