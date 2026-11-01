@@ -16,6 +16,7 @@ from typing import Any
 from loguru import logger
 
 from ...live.character_profile import XIAOJING_PROFILE
+from ...live.douyin_policy import DOUYIN_LIVE_POLICY
 from ...live.emotion_tags import normalize_emotion_tags
 from ...live.events import LiveBatch
 from ...live.personality import (
@@ -67,7 +68,8 @@ class LiveStreamerAgent(BasicMemoryAgent):
             f"{self._system}\n{RESPONSE_POLICY}\n"
             f"{self._character_profile.compact_prompt()}\n"
             f"{meme_system_guide()}\n"
-            f"{PROGRAMMING_POLICY}"
+            f"{PROGRAMMING_POLICY}\n"
+            f"{DOUYIN_LIVE_POLICY}"
         )
         self.set_system(self._system)
         self._live_planner = live_planner or LiveReActPlanner(llm=self._llm)
