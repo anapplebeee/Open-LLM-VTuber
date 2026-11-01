@@ -27,6 +27,10 @@ from ...live.personality import (
 )
 from ...live.memes import meme_system_guide
 from ...live.planner import LiveDecision, LiveReActPlanner
+from ...live.programming_guard import (
+    PROGRAMMING_POLICY,
+    constrain_programming_reply,
+)
 from ...live.replyer import LiveReplyer
 from ...live.speech_gate import SpeechGate
 from ..input_types import BatchInput, TextData, TextSource
@@ -61,7 +65,8 @@ class LiveStreamerAgent(BasicMemoryAgent):
         self._system = (
             f"{self._system}\n{RESPONSE_POLICY}\n"
             f"{self._character_profile.compact_prompt()}\n"
-            f"{meme_system_guide()}"
+            f"{meme_system_guide()}\n"
+            f"{PROGRAMMING_POLICY}"
         )
         self.set_system(self._system)
         self._live_planner = live_planner or LiveReActPlanner(llm=self._llm)
@@ -125,6 +130,7 @@ class LiveStreamerAgent(BasicMemoryAgent):
                         raw_text,
                         max_sentences=max(1, remaining_sentences),
                     )
+                    cleaned = constrain_programming_reply(cleaned, request_text)
                     if not cleaned:
                         logger.warning("Discarded unsafe normal-chat reply")
                         continue
@@ -217,6 +223,12 @@ class LiveStreamerAgent(BasicMemoryAgent):
                 ),
                 history=history,
             )
+            request_text = "\n".join(
+                event.content for event in batch.events if event.content
+            )
+            text = constrain_programming_reply(text, request_text)
+            if not text:
+                return
             self._add_message(
                 "\n".join(event.to_agent_text() for event in batch.events), "user"
             )
@@ -241,7 +253,18 @@ class LiveStreamerAgent(BasicMemoryAgent):
                 "skip_memory": False,
             },
         )
+        live_request_text = "\n".join(
+            event.content for event in batch.events if event.content
+        )
         async for output in self._base_chat(prepared):
+            if isinstance(output, SentenceOutput):
+                safe = constrain_programming_reply(
+                    output.display_text.text, live_request_text
+                )
+                if not safe:
+                    continue
+                output.display_text.text = safe
+                output.tts_text = safe
             yield output
 
     async def _stream_live_text(self, text: str) -> AsyncIterator[Any]:
