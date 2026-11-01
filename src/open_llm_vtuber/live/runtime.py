@@ -37,6 +37,7 @@ from .songbook import (
     detect_song_control,
     detect_song_correction,
 )
+from .story import detect_story_command
 from .state import EmotionEngine, EmotionState, StreamState, ViewerRegistry
 from .store import LiveStore
 
@@ -93,6 +94,7 @@ class LiveSession:
         rundown: RundownState | None = None,
         session_id: str | None = None,
         on_batch_end: Callable[[], Awaitable[None]] | None = None,
+        on_speech_interrupt: Callable[[], Awaitable[None]] | None = None,
         on_song: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_reply: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         review_logger: LiveReviewLogger | None = None,
@@ -114,6 +116,7 @@ class LiveSession:
         self.agent = agent
         self.on_output = on_output
         self.on_batch_end = on_batch_end
+        self.on_speech_interrupt = on_speech_interrupt
         self.on_song = on_song
         self.on_reply = on_reply
         self.review_logger = review_logger or LiveReviewLogger()
@@ -309,6 +312,7 @@ class LiveSession:
     def ingest(self, event: RoomEvent) -> bool:
         if not self._running:
             return False
+        self._interrupt_story_for_event(event)
         if event.type == "join" and self._is_duplicate_join(event):
             logger.debug(
                 "Ignoring repeated join for {} in room {}",
@@ -322,6 +326,33 @@ class LiveSession:
         else:
             self._pending_song_result = None
         return accepted
+
+    def _interrupt_story_for_event(self, event: RoomEvent) -> None:
+        """Let gifts and ordinary chat preempt an in-flight story."""
+        agent = self.agent
+        if agent is None or not hasattr(agent, "is_story_active"):
+            return
+        try:
+            if not agent.is_story_active():
+                return
+            interrupt = event.type in {"gift", "operator"}
+            if event.type == "chat":
+                command = detect_story_command(event.content or "")
+                # Story start/continue replaces the current story intentionally;
+                # any other chat (including stop) interrupts it.
+                interrupt = command is None or command.action == "stop"
+            if not interrupt:
+                return
+            agent.interrupt_story()
+        except Exception:
+            logger.exception("Failed to interrupt story")
+            return
+        if self.on_speech_interrupt is not None:
+            task = asyncio.create_task(
+                self.on_speech_interrupt(), name="live-story-interrupt"
+            )
+            self._song_tasks.add(task)
+            task.add_done_callback(self._song_tasks.discard)
 
     def _is_duplicate_join(self, event: RoomEvent, *, window_ms: int = 60_000) -> bool:
         """Suppress dyhub's repeated member events for the same viewer."""

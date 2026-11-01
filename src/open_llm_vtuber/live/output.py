@@ -74,10 +74,23 @@ class LiveBrowserOutput:
                 task.cancel()
         self.tts_manager.clear()
 
+    async def interrupt(self) -> None:
+        """Stop queued story speech while preserving the audio owner."""
+        tasks = list(self.tts_manager.task_list)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self.tts_manager.clear()
+        await self._send_text(
+            json.dumps({"type": "control", "text": "conversation-chain-end"})
+        )
+
     async def end_batch(self) -> None:
         had_tasks = bool(self.tts_manager.task_list)
         if had_tasks:
-            await asyncio.gather(*self.tts_manager.task_list)
+            await asyncio.gather(*self.tts_manager.task_list, return_exceptions=True)
         await self.tts_manager.wait_idle(timeout=15)
         if had_tasks:
             await self._send_text(json.dumps({"type": "backend-synth-complete"}))

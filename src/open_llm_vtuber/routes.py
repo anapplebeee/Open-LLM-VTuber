@@ -190,6 +190,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             on_song=output.send_event,
             on_reply=output.send_event,
             on_batch_end=output.end_batch,
+            on_speech_interrupt=output.interrupt,
             on_close=output.close,
             session_id=session_id,
             store=live_store,

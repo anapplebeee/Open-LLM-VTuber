@@ -37,6 +37,7 @@ from ...live.programming_guard import (
 )
 from ...live.replyer import LiveReplyer
 from ...live.speech_gate import SpeechGate
+from ...live.story import LiveStoryTeller, detect_story_command, split_story_text
 from ..input_types import BatchInput, TextData, TextSource
 from ..output_types import SentenceOutput
 from ..transformers import (
@@ -61,6 +62,7 @@ class LiveStreamerAgent(BasicMemoryAgent):
         *,
         live_planner: Any | None = None,
         live_replyer: LiveReplyer | None = None,
+        story_teller: LiveStoryTeller | None = None,
         rundown_state: Any = None,
         **kwargs: Any,
     ) -> None:
@@ -76,6 +78,10 @@ class LiveStreamerAgent(BasicMemoryAgent):
         self.set_system(self._system)
         self._live_planner = live_planner or LiveReActPlanner(llm=self._llm)
         self._live_replyer = live_replyer or LiveReplyer(llm=self._llm)
+        self._story_teller = story_teller or LiveStoryTeller(llm=self._llm)
+        self._story_active = False
+        self._story_interrupted = False
+        self._story_previous = ""
         self._rundown_state = rundown_state
         self._session_recap = ""
         self._notebook_text = ""
@@ -105,6 +111,15 @@ class LiveStreamerAgent(BasicMemoryAgent):
         self._session_recap = recent_recap
         self._notebook_text = notebook
         self._context_packet = context_packet
+
+    def interrupt_story(self) -> None:
+        """Ask an in-flight story to stop after its current chunk."""
+        if self._story_active:
+            self._story_interrupted = True
+            self._story_active = False
+
+    def is_story_active(self) -> bool:
+        return self._story_active
 
     async def _live_chat(self, input_data: BatchInput) -> AsyncIterator[Any]:
         batch = (input_data.metadata or {}).get("live_batch")
@@ -183,6 +198,49 @@ class LiveStreamerAgent(BasicMemoryAgent):
         if not policy.allow:
             logger.debug("Live batch suppressed by interaction policy: {}", policy.reason)
             return
+
+        if batch.kind == "chat":
+            request_text = "\n".join(event.content for event in batch.events)
+            story_command = detect_story_command(request_text)
+            if story_command is not None:
+                if story_command.action == "stop":
+                    self.interrupt_story()
+                    self._story_previous = ""
+                    async for output in self._stream_live_text("好，不讲了。"):
+                        yield output
+                    return
+                if story_command.action in {"start", "continue"}:
+                    if story_command.action == "start":
+                        self._story_previous = ""
+                    topic = story_command.topic or "一只蓝鲸娘在深夜直播间遇到的奇怪客人"
+                    self._story_active = True
+                    self._story_interrupted = False
+                    try:
+                        story = await self._story_teller.tell(
+                            topic,
+                            persona=self._system,
+                            previous=self._story_previous,
+                        )
+                    except Exception:
+                        logger.exception("Live story generation failed")
+                        story = ""
+                    if not story:
+                        self._story_active = False
+                        async for output in self._stream_live_text(
+                            "故事没编出来，换一个题目吧。"
+                        ):
+                            yield output
+                        return
+                    self._story_previous = story
+                    self._add_message(request_text, "user")
+                    self._add_message(story, "assistant")
+                    for chunk in split_story_text(story):
+                        if self._story_interrupted or not self._story_active:
+                            break
+                        async for output in self._stream_live_text(chunk):
+                            yield output
+                    self._story_active = False
+                    return
 
         fast_reply = fast_live_reply(batch)
         if fast_reply is not None:
