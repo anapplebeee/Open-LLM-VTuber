@@ -221,6 +221,8 @@
   const isLiveViewPage = window.location.pathname.includes("live-view");
   let bgmAudio = null;
   let bgmAutoplayBlocked = false;
+  let liveStageTransformKey = "";
+  let liveResizeKey = "";
 
   function readStageSetting(name, fallback) {
     try {
@@ -247,6 +249,12 @@
     const scale = Math.max(0.4, Math.min(2.5, readStageSetting("scale", 1)));
     const x = Math.max(-500, Math.min(500, readStageSetting("x", 0)));
     const y = Math.max(-500, Math.min(500, readStageSetting("y", 0)));
+    const key = `${scale}|${x}|${y}`;
+    if (liveStageTransformKey === key && wrapper.dataset.dshStageKey === key) {
+      return;
+    }
+    liveStageTransformKey = key;
+    wrapper.dataset.dshStageKey = key;
     wrapper.style.transformOrigin = "50% 100%";
     wrapper.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
     const canvas = wrapper.querySelector("canvas#canvas");
@@ -300,7 +308,11 @@
     stage.style.setProperty("height", "100vh", "important");
     stage.style.setProperty("z-index", "5", "important");
     applyLiveStageTransform();
-    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    const resizeKey = `${window.innerWidth}x${window.innerHeight}`;
+    if (liveResizeKey !== resizeKey) {
+      liveResizeKey = resizeKey;
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    }
   }
 
   function ensureStageControls() {
