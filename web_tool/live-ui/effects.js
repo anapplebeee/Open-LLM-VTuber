@@ -476,10 +476,9 @@
     stage.style.setProperty("top", "0", "important");
     stage.style.setProperty("width", "100vw", "important");
     stage.style.setProperty("height", "100vh", "important");
-    // Keep the Live2D stage below the app/subtitle overlay. Raising the
-    // subtitle's ancestors instead broke the subtitle layout.
-    stage.style.setProperty("z-index", "1", "important");
-    if (main) main.style.setProperty("z-index", "10", "important");
+    // Restore the model layer. The subtitle is rendered in a separate
+    // document-level overlay instead of covering the model with the whole app.
+    stage.style.setProperty("z-index", "5", "important");
     applyLiveStageTransform();
     const resizeKey = `${window.innerWidth}x${window.innerHeight}`;
     if (liveResizeKey !== resizeKey) {
@@ -1329,6 +1328,132 @@
       node = node.parentElement;
       depth += 1;
     }
+  }
+
+  let subtitleCloneEl = null;
+
+  function applySubtitleCloneOffset() {
+    if (!subtitleCloneEl) return;
+    let offset = { x: 0, y: 0 };
+    try {
+      offset = JSON.parse(
+        localStorage.getItem("dsh-subtitle-offset") || '{"x":0,"y":0}'
+      );
+    } catch (_) {
+      /* ignore */
+    }
+    subtitleCloneEl.style.transform = `translateX(-50%) translate(${Number(
+      offset.x
+    ) || 0}px, ${Number(offset.y) || 0}px)`;
+  }
+
+  function ensureSubtitleClone() {
+    if (subtitleCloneEl || !isLiveViewPage) return;
+    const el = document.createElement("div");
+    el.id = "dsh-subtitle-clone";
+    el.style.cssText = [
+      "position:fixed",
+      "left:50%",
+      "bottom:135px",
+      "z-index:2147483000",
+      "box-sizing:border-box",
+      "width:fit-content",
+      "max-width:min(68%,720px)",
+      "padding:7px 17px",
+      "border-radius:10px",
+      "border:1px solid rgba(196,222,255,.13)",
+      "background:rgba(8,13,22,.55)",
+      "box-shadow:0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06)",
+      "backdrop-filter:blur(9px)",
+      "color:#f2f8ff",
+      "font:500 clamp(16px,1.05vw,20px)/1.35 'Microsoft YaHei','Segoe UI',system-ui,sans-serif",
+      "letter-spacing:.015em",
+      "text-align:center",
+      "white-space:pre-wrap",
+      "overflow-wrap:anywhere",
+      "pointer-events:auto",
+      "cursor:grab",
+      "display:none",
+    ].join(";");
+    let drag = null;
+    el.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      let offset = { x: 0, y: 0 };
+      try {
+        offset = JSON.parse(
+          localStorage.getItem("dsh-subtitle-offset") || '{"x":0,"y":0}'
+        );
+      } catch (_) {
+        /* ignore */
+      }
+      drag = {
+        startX: event.clientX,
+        startY: event.clientY,
+        x: Number(offset.x) || 0,
+        y: Number(offset.y) || 0,
+      };
+      el.setPointerCapture?.(event.pointerId);
+      el.style.cursor = "grabbing";
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    document.addEventListener(
+      "pointermove",
+      (event) => {
+        if (!drag) return;
+        const x = Math.max(-900, Math.min(900, drag.x + event.clientX - drag.startX));
+        const y = Math.max(-700, Math.min(700, drag.y + event.clientY - drag.startY));
+        el.style.transform = `translateX(-50%) translate(${x}px, ${y}px)`;
+        drag.nextX = x;
+        drag.nextY = y;
+      },
+      true
+    );
+    const end = () => {
+      if (!drag) return;
+      const finished = drag;
+      drag = null;
+      el.style.cursor = "grab";
+      try {
+        localStorage.setItem(
+          "dsh-subtitle-offset",
+          JSON.stringify({ x: finished.nextX || 0, y: finished.nextY || 0 })
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    document.addEventListener("pointerup", end, true);
+    document.addEventListener("pointercancel", end, true);
+    el.addEventListener("dblclick", () => {
+      try {
+        localStorage.removeItem("dsh-subtitle-offset");
+      } catch (_) {
+        /* ignore */
+      }
+      applySubtitleCloneOffset();
+    });
+    document.body.appendChild(el);
+    subtitleCloneEl = el;
+    applySubtitleCloneOffset();
+  }
+
+  function syncSubtitleClone() {
+    if (!isLiveViewPage) return;
+    ensureSubtitleClone();
+    if (!subtitleCloneEl) return;
+    const box = findSubtitleBox();
+    const text = box ? (box.innerText || "").trim() : "";
+    if (!box || !text) {
+      subtitleCloneEl.style.display = "none";
+      if (box) box.style.visibility = "visible";
+      return;
+    }
+    subtitleCloneEl.textContent = text;
+    subtitleCloneEl.style.display = "block";
+    // Keep the original in the React tree for measurement/accessibility, but
+    // hide its pixels so the document-level clone owns the visible layer.
+    box.style.visibility = "hidden";
   }
 
   function pinSubtitlePosition() {
@@ -2239,7 +2364,7 @@
     // One-time recovery from offsets saved by the earlier buggy nested drag:
     // reset the subtitle to its normal bottom-center position on this build.
     try {
-      const resetKey = "dsh-subtitle-reset-v44";
+      const resetKey = "dsh-subtitle-reset-v45";
       if (!localStorage.getItem(resetKey)) {
         localStorage.removeItem("dsh-subtitle-offset");
         localStorage.removeItem("dsh-presence-pos");
@@ -2263,6 +2388,7 @@
     clearInterval(presenceTimer);
     presenceTimer = setInterval(updatePresenceBubble, 500);
     setInterval(syncReplyContextPosition, 180);
+    setInterval(syncSubtitleClone, 180);
     if (isLiveViewPage) {
       syncBgm();
       setInterval(syncBgm, 300);
