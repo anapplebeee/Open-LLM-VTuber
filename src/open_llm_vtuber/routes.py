@@ -384,6 +384,12 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                     await websocket.send_text(
                         json.dumps({"type": "heartbeat-ack"})
                     )
+                elif message.get("type") == "song-play-target":
+                    if live_session is not None:
+                        await live_session.play_song_target(
+                            str(message.get("title") or ""),
+                            str(message.get("entry_id") or ""),
+                        )
                 elif message.get("type") == "song-finished":
                     if live_session is not None:
                         await live_session.finish_song(

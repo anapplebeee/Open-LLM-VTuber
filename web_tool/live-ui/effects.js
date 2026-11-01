@@ -1850,11 +1850,10 @@
       return;
     }
     const active = Boolean(songAudio);
-    const canPrev = songQueue.length > 0 && currentQueueIndex > 0;
+    const canPrev = songQueue.length > 1 && currentQueueIndex > 0;
     const canNext =
-      songQueue.length > 0 &&
-      currentQueueIndex >= 0 &&
-      currentQueueIndex < songQueue.length - 1;
+      songQueue.length > 1 &&
+      (currentQueueIndex < 0 || currentQueueIndex < songQueue.length - 1);
     prevButton.disabled = !canPrev;
     nextButton.disabled = !canNext;
     pauseButton.disabled = !active;
@@ -2093,9 +2092,28 @@
       return;
     }
     const item = songQueue[target];
-    const data = songData.get(String(item.title || "").trim());
+    const title = String(item.title || "").trim();
+    const data =
+      songData.get(title) ||
+      (item.url
+        ? {
+            ...item,
+            title,
+            url: item.url,
+            duration_ms: item.duration_ms || 0,
+          }
+        : null);
     if (!data || !data.url) {
-      showSongChip("这首歌的播放地址还没取到");
+      // Do not leave the UI stuck on an unplayable queue row. Ask the
+      // backend to resolve this entry now and play it immediately.
+      const sent = window.__dshSendMessage?.({
+        type: "song-play-target",
+        entry_id: String(item.id || ""),
+        title,
+      });
+      showSongChip(
+        sent ? "正在准备这首歌…" : "这首歌的播放地址还没取到"
+      );
       return;
     }
     currentQueueIndex = target;
@@ -2198,8 +2216,19 @@
         url: song.url,
         artist: song.artist || songQueue[index].artist,
         track_id: song.track_id || songQueue[index].track_id,
+        duration_ms: song.duration_ms || songQueue[index].duration_ms || 0,
       };
+      currentQueueIndex = index;
       renderPlaylist();
+    }
+    // An explicit jump request must replace the current track immediately.
+    if (song.play_now) {
+      currentSongTitle = title;
+      currentEntryId = entryId;
+      songArtist = String(song.artist || "");
+      songDurationMs = Number(song.duration_ms) || 0;
+      playSong(song);
+      return;
     }
     // A new request must never replace the song that is currently audible.
     if (songAudio || pendingSong) return;

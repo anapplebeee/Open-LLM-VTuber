@@ -363,7 +363,15 @@ class LiveSession:
                 {"type": "song-queue", **self.song_requests.snapshot()}
             )
 
-    async def _play_song(self, title: str, entry_id: str = "") -> None:
+    async def play_song_target(
+        self, title: str, entry_id: str = ""
+    ) -> None:
+        """Resolve one queued track and ask the frontend to jump to it."""
+        await self._play_song(title, entry_id, play_now=True)
+
+    async def _play_song(
+        self, title: str, entry_id: str = "", *, play_now: bool = False
+    ) -> None:
         try:
             song = await self.song_provider.resolve(title)
             if song is None:
@@ -378,6 +386,7 @@ class LiveSession:
                 "artist": song.artist,
                 "url": song.url,
                 "duration_ms": song.duration_ms,
+                "play_now": play_now,
             }
             await self.on_song(payload)
         except Exception:
