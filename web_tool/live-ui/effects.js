@@ -1036,6 +1036,39 @@
     };
     document.addEventListener("pointerup", end, true);
     document.addEventListener("pointercancel", end, true);
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (!event.altKey) return;
+        const key = event.key;
+        const dx = key === "ArrowLeft" ? -10 : key === "ArrowRight" ? 10 : 0;
+        const dy = key === "ArrowUp" ? -10 : key === "ArrowDown" ? 10 : 0;
+        if (!dx && !dy) return;
+        const boxes = Array.from(
+          document.querySelectorAll('[data-dsh-subtitle-box="1"]')
+        ).filter((box) => !hasMarkedSubtitleAncestor(box));
+        const box = boxes[0];
+        if (!box) return;
+        applySubtitleOffset(
+          box,
+          Number(box.dataset.dshDragX || 0) + dx,
+          Number(box.dataset.dshDragY || 0) + dy
+        );
+        try {
+          localStorage.setItem(
+            "dsh-subtitle-offset",
+            JSON.stringify({
+              x: Number(box.dataset.dshDragX || 0),
+              y: Number(box.dataset.dshDragY || 0),
+            })
+          );
+        } catch (_) {
+          /* ignore */
+        }
+        event.preventDefault();
+      },
+      true
+    );
   }
 
   function compactSubtitleBox(box) {
@@ -1069,6 +1102,15 @@
         );
       } catch (_) {
         /* use defaults */
+      }
+      try {
+        const query = new URLSearchParams(window.location.search);
+        const queryX = Number(query.get("subx"));
+        const queryY = Number(query.get("suby"));
+        if (Number.isFinite(queryX)) saved.x = queryX;
+        if (Number.isFinite(queryY)) saved.y = queryY;
+      } catch (_) {
+        /* ignore invalid query */
       }
       applySubtitleOffset(
         box,
