@@ -8,6 +8,7 @@ from src.open_llm_vtuber.live.personality import (
     EMOTION_FALLBACK,
     GENERIC_FALLBACK,
     GREETING_FALLBACK,
+    LIVE_STREAMER_VOICE,
     STREAMER_FALLBACK,
     LiveInteractionPolicy,
     emotion_hint_for_text,
@@ -182,6 +183,11 @@ class LiveReplySanitizerTest(unittest.TestCase):
         previous = ["今天我们一起吐泡泡，开心地游来游去。"]
         self.assertFalse(gate.verdict("今天我们一起吐泡泡，开心地游来游去。", previous).passed)
         self.assertTrue(gate.verdict("这题我会，先让我想一想。", previous).passed)
+
+    def test_streamer_voice_prompt_is_live_first(self):
+        self.assertIn("直播间", LIVE_STREAMER_VOICE)
+        self.assertIn("不是客服", LIVE_STREAMER_VOICE)
+        self.assertIn("接住刚刚", LIVE_STREAMER_VOICE)
 
     def test_fast_reply_covers_time_greeting_and_control(self):
         self.assertIn("现在是", fast_live_reply(make_batch("现在几点了")))

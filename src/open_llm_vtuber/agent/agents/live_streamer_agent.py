@@ -20,6 +20,7 @@ from ...live.douyin_policy import DOUYIN_LIVE_POLICY
 from ...live.emotion_tags import normalize_emotion_tags
 from ...live.events import LiveBatch
 from ...live.personality import (
+    LIVE_STREAMER_VOICE,
     RESPONSE_POLICY,
     LiveInteractionPolicy,
     emotion_hint_for_text,
@@ -66,7 +67,7 @@ class LiveStreamerAgent(BasicMemoryAgent):
         super().__init__(**kwargs)
         self._character_profile = XIAOJING_PROFILE
         self._system = (
-            f"{self._system}\n{RESPONSE_POLICY}\n"
+            f"{self._system}\n{LIVE_STREAMER_VOICE}\n{RESPONSE_POLICY}\n"
             f"{self._character_profile.compact_prompt()}\n"
             f"{meme_system_guide()}\n"
             f"{PROGRAMMING_POLICY}\n"
