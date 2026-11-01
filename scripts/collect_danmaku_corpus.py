@@ -45,16 +45,23 @@ def normalize_room_id(value: str) -> str:
     return digits
 
 
-def read_rooms(args: argparse.Namespace) -> list[str]:
+def _read_rooms_file(path: Path) -> list[str]:
+    if not path.exists():
+        return []
     values: list[str] = []
-    values.extend(args.room or [])
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            values.append(line)
+    return values
+
+
+def read_rooms(args: argparse.Namespace) -> list[str]:
+    values: list[str] = list(args.room or [])
     if args.rooms_file:
-        path = Path(args.rooms_file)
-        if path.exists():
-            for line in path.read_text(encoding="utf-8").splitlines():
-                line = line.split("#", 1)[0].strip()
-                if line:
-                    values.append(line)
+        values.extend(_read_rooms_file(Path(args.rooms_file)))
+    elif not values:
+        values.extend(_read_rooms_file(DEFAULT_ROOMS_FILE))
     if not values:
         values.extend(DEFAULT_TEST_ROOMS)
     rooms: list[str] = []
@@ -248,7 +255,7 @@ async def collect(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect public danmaku into a test corpus")
     parser.add_argument("--room", action="append", help="直播间 web_rid / live.douyin.com 链接，可重复")
-    parser.add_argument("--rooms-file", default=str(DEFAULT_ROOMS_FILE), help="每行一个房间号/链接")
+    parser.add_argument("--rooms-file", default="", help="每行一个房间号/链接；不传且没有 --room 时读取默认 rooms.txt")
     parser.add_argument("--api-base", default=DEFAULT_API)
     parser.add_argument("--ws-url", default=DEFAULT_WS)
     parser.add_argument("--duration", type=float, default=120.0, help="采集秒数")
