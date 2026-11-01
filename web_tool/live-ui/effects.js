@@ -123,6 +123,8 @@
   let presenceEl = null;
   let presenceState = "";
   let presenceTimer = 0;
+  let presenceManualPosition = null;
+  let presenceDrag = null;
   let expressionTimers = [];
 
   let songQueue = [];
@@ -502,11 +504,84 @@
     presenceEl.id = "dsh-presence-bubble";
     presenceEl.innerHTML =
       '<span class="dsh-presence-dot"></span><span class="dsh-presence-text"></span>';
+    try {
+      const saved = JSON.parse(localStorage.getItem("dsh-presence-pos") || "null");
+      if (
+        saved &&
+        Number.isFinite(saved.left) &&
+        Number.isFinite(saved.top)
+      ) {
+        presenceManualPosition = saved;
+      }
+    } catch (_) {
+      /* ignore malformed saved position */
+    }
+    presenceEl.style.pointerEvents = "auto";
+    presenceEl.style.cursor = "grab";
+    presenceEl.style.touchAction = "none";
+    presenceEl.title = "拖动状态气泡，双击复位";
+    presenceEl.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const rect = presenceEl.getBoundingClientRect();
+      presenceDrag = {
+        dx: event.clientX - rect.left,
+        dy: event.clientY - rect.top,
+      };
+      presenceEl.setPointerCapture?.(event.pointerId);
+      presenceEl.style.cursor = "grabbing";
+      event.preventDefault();
+    });
+    const move = (event) => {
+      if (!presenceDrag) return;
+      const left = Math.max(
+        8,
+        Math.min(window.innerWidth - 60, event.clientX - presenceDrag.dx)
+      );
+      const top = Math.max(
+        8,
+        Math.min(window.innerHeight - 40, event.clientY - presenceDrag.dy)
+      );
+      presenceManualPosition = { left, top };
+      presenceEl.style.left = `${left}px`;
+      presenceEl.style.top = `${top}px`;
+    };
+    const end = () => {
+      if (!presenceDrag) return;
+      presenceDrag = null;
+      presenceEl.style.cursor = "grab";
+      if (presenceManualPosition) {
+        try {
+          localStorage.setItem(
+            "dsh-presence-pos",
+            JSON.stringify(presenceManualPosition)
+          );
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+    presenceEl.addEventListener("dblclick", () => {
+      presenceManualPosition = null;
+      try {
+        localStorage.removeItem("dsh-presence-pos");
+      } catch (_) {
+        /* ignore */
+      }
+      positionPresenceBubble();
+    });
     document.body.appendChild(presenceEl);
   }
 
   function positionPresenceBubble() {
     if (!presenceEl) return;
+    if (presenceManualPosition) {
+      presenceEl.style.left = `${presenceManualPosition.left}px`;
+      presenceEl.style.top = `${presenceManualPosition.top}px`;
+      return;
+    }
     const stage =
       document.querySelector("#live2d-internal-wrapper") ||
       document.querySelector("canvas#canvas")?.parentElement;
@@ -605,6 +680,74 @@
     document.body.appendChild(replyContextEl);
   }
 
+  function applySubtitleOffset(box, x, y) {
+    box.dataset.dshDragX = String(x);
+    box.dataset.dshDragY = String(y);
+    box.style.setProperty(
+      "transform",
+      `translate(${x}px, ${y}px)`,
+      "important"
+    );
+  }
+
+  function installSubtitleDrag(box) {
+    if (!box || box.dataset.dshDragReady === "1") return;
+    box.dataset.dshDragReady = "1";
+    box.style.setProperty("pointer-events", "auto", "important");
+    box.style.cursor = "grab";
+    box.style.touchAction = "none";
+    box.title = "拖动字幕，双击复位";
+    let drag = null;
+    box.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const x = Number(box.dataset.dshDragX || 0);
+      const y = Number(box.dataset.dshDragY || 0);
+      drag = { startX: event.clientX, startY: event.clientY, x, y };
+      box.setPointerCapture?.(event.pointerId);
+      box.style.cursor = "grabbing";
+      event.preventDefault();
+    });
+    const move = (event) => {
+      if (!drag) return;
+      const x = Math.max(
+        -900,
+        Math.min(900, drag.x + event.clientX - drag.startX)
+      );
+      const y = Math.max(
+        -700,
+        Math.min(700, drag.y + event.clientY - drag.startY)
+      );
+      applySubtitleOffset(box, x, y);
+    };
+    const end = () => {
+      if (!drag) return;
+      drag = null;
+      box.style.cursor = "grab";
+      try {
+        localStorage.setItem(
+          "dsh-subtitle-offset",
+          JSON.stringify({
+            x: Number(box.dataset.dshDragX || 0),
+            y: Number(box.dataset.dshDragY || 0),
+          })
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+    box.addEventListener("dblclick", () => {
+      applySubtitleOffset(box, 0, 0);
+      try {
+        localStorage.removeItem("dsh-subtitle-offset");
+      } catch (_) {
+        /* ignore */
+      }
+    });
+  }
+
   function compactSubtitleBox(box) {
     if (!box) return;
     const text = box.querySelector("p");
@@ -625,6 +768,28 @@
     box.style.setProperty("background", "rgba(8, 13, 22, .55)", "important");
     box.style.setProperty("box-shadow", "0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06)", "important");
     box.style.setProperty("backdrop-filter", "blur(9px)", "important");
+    if (box.dataset.dshDragX === undefined) {
+      let saved = { x: 0, y: 0 };
+      try {
+        saved = JSON.parse(
+          localStorage.getItem("dsh-subtitle-offset") || '{"x":0,"y":0}'
+        );
+      } catch (_) {
+        /* use defaults */
+      }
+      applySubtitleOffset(
+        box,
+        Number.isFinite(saved.x) ? saved.x : 0,
+        Number.isFinite(saved.y) ? saved.y : 0
+      );
+    } else {
+      applySubtitleOffset(
+        box,
+        Number(box.dataset.dshDragX || 0),
+        Number(box.dataset.dshDragY || 0)
+      );
+    }
+    installSubtitleDrag(box);
   }
 
   function styleSubtitleBoxes() {
