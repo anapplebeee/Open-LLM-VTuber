@@ -43,6 +43,11 @@ _PLAYBACK_CONTROL = re.compile(
     r"^(?:切歌|跳过|下一首|上一首|暂停音乐|继续音乐|关闭音乐|停止音乐|关掉音乐)$"
 )
 _SONG_CORRECTION = re.compile(r"^(?:不是这首(?:呀|啊)?|不对(?:呀|啊)?|换一首)$")
+_RANDOM_SONG = re.compile(
+    r"^(?:(?:给我|帮我)?(?:从歌单里)?(?:随便|随机)?(?:从歌单里)?"
+    r"(?:放|播放|来|点)(?:一?首|一首歌|首歌|歌曲)?(?:歌)?|"
+    r"(?:随机|随便)(?:播放|放|来)(?:一?首|一首歌|首歌)?)$"
+)
 
 
 def detect_song_control(text: str) -> str | None:
@@ -106,7 +111,7 @@ class SongRequest:
 
 @dataclass(frozen=True)
 class SongRequestResult:
-    action: Literal["queued", "listed", "cancelled", "rejected"]
+    action: Literal["queued", "random", "listed", "cancelled", "rejected"]
     reply_hint: str
     entry: SongRequest | None = None
     position: int | None = None
@@ -173,6 +178,8 @@ class SongRequestQueue:
         now = int(now_ms if now_ms is not None else event.received_at_ms)
         if _LIST.match(text):
             return self._listed()
+        if _RANDOM_SONG.match(text):
+            return self._random(event, now)
         if _BARE.match(text):
             return SongRequestResult("rejected", f"要听什么？格式：{USAGE}")
         cancel_match = _CANCEL.match(text)
@@ -218,6 +225,14 @@ class SongRequestQueue:
             ],
             max_size=self.max_queue,
         ).to_dict()
+
+    def _random(self, event: RoomEvent, now: int) -> SongRequestResult:
+        # "歌单" means the authenticated NetEase "liked songs" playlist.
+        # The provider resolves the actual track asynchronously in LiveSession.
+        return SongRequestResult(
+            "random",
+            "已从网易云「我喜欢的音乐」随机选一首，正在准备播放，不要说版权确认。",
+        )
 
     def _enqueue(self, event: RoomEvent, raw_title: str, now: int) -> SongRequestResult:
         title, query = parse_request_title(raw_title)
@@ -290,6 +305,13 @@ class SongRequestQueue:
 
     @staticmethod
     def prompt_note(result: SongRequestResult) -> str:
+        if result.action == "random":
+            return (
+                "【点歌系统】" + result.reply_hint +
+                " 这是已审核歌单里的歌曲，直接自然确认播放；"
+                "不要说版权不确定，也不要让观众再确认。"
+                "不要念出方括号或系统标签。"
+            )
         return (
             "【点歌系统】" + result.reply_hint +
             " 请用一句自然短话回应观众，不要念出方括号或系统标签。"

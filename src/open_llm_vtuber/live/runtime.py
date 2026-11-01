@@ -427,6 +427,14 @@ class LiveSession:
         )
         self._song_tasks.add(queue_task)
         queue_task.add_done_callback(self._song_tasks.discard)
+        if result.action == "random":
+            task = asyncio.create_task(
+                self._play_random_liked(),
+                name="live-song-random-liked",
+            )
+            self._song_tasks.add(task)
+            task.add_done_callback(self._song_tasks.discard)
+            return
         if result.action != "queued" or result.entry is None:
             return
         task = asyncio.create_task(
@@ -484,6 +492,36 @@ class LiveSession:
     ) -> None:
         """Resolve one queued track and ask the frontend to jump to it."""
         await self._play_song(title, entry_id, query=query, play_now=True)
+
+    async def _play_random_liked(self) -> None:
+        """Resolve and dispatch one random track from NetEase liked songs."""
+        try:
+            song = await self.song_provider.random_liked()
+            if song is None:
+                await self._notify_song_unavailable(
+                    "网易云喜欢的歌", "", "liked_unavailable"
+                )
+                return
+            self._set_song_playback("playing", song.title, "")
+            if self.on_song is not None:
+                await self.on_song(
+                    {
+                        "type": "song",
+                        "action": "play",
+                        "entry_id": "",
+                        "track_id": song.track_id,
+                        "title": song.title,
+                        "artist": song.artist,
+                        "url": song.url,
+                        "duration_ms": song.duration_ms,
+                        "play_now": False,
+                    }
+                )
+        except Exception:
+            logger.exception("Random liked song dispatch failed")
+            await self._notify_song_unavailable(
+                "网易云喜欢的歌", "", "liked_error"
+            )
 
     async def _play_song(
         self,

@@ -77,6 +77,14 @@ class SongRequestQueueTest(unittest.TestCase):
         self.assertEqual(detect_song_correction("不对"), "next")
         self.assertEqual(detect_song_control("下一首"), "next")
 
+    def test_random_song_uses_netease_liked_playlist(self):
+        queue = SongRequestQueue()
+        for text in ("给我放首歌", "随便放一首歌", "从歌单里随机播放一首"):
+            result = queue.handle(event(text))
+            self.assertEqual(result.action, "random")
+            self.assertIsNone(result.entry)
+            self.assertIn("网易云", result.reply_hint)
+
     def test_play_yishou_prefix_is_removed(self):
         queue = SongRequestQueue()
         result = queue.handle(event("播放一首幼稚完"))

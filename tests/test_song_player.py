@@ -23,6 +23,16 @@ class FakeSongProvider(NeteaseSongProvider):
     def __init__(self, session_path: Path) -> None:
         super().__init__(session_path=session_path)
 
+    def _load_liked_tracks(self):
+        return [
+            {
+                "id": "456",
+                "name": "喜欢的歌",
+                "artist": "测试歌手",
+                "duration": 1200,
+            }
+        ]
+
     def _search_track(self, query):
         return {
             "id": "123",
@@ -75,6 +85,13 @@ class SongPlayerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[0]["url"], "http://example.test/song.mp3")
         self.assertEqual(session.song_playback.state, "playing")
         self.assertEqual(session.song_playback.current_title, "海底")
+
+    async def test_random_liked_uses_liked_playlist(self):
+        provider = FakeSongProvider(self.session_path)
+        song = await provider.random_liked()
+        self.assertIsNotNone(song)
+        self.assertEqual(song.title, "喜欢的歌")
+        self.assertEqual(song.artist, "测试歌手")
 
     async def test_missing_song_emits_unavailable_and_removes_queue(self):
         payloads = []

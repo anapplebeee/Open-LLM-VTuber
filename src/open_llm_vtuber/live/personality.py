@@ -317,6 +317,10 @@ def fast_live_reply(batch: Any, *, now: Any = None) -> str | None:
     ).strip()
     if not text:
         return None
+    if "【点歌系统】" in text and (
+        "随机" in text or "我喜欢的音乐" in text
+    ):
+        return "行，随机放一首，听前奏。"
     if len(text) <= 24 and _TIME_QUERY.search(text):
         current = now or datetime.now().astimezone()
         weekdays = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
