@@ -8,11 +8,13 @@
       // output from /live-view-ws. The event producer owns /live-ws.
       localStorage.setItem(
         "wsUrl",
-        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live-view-ws`
+        JSON.stringify(
+          `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live-view-ws`
+        )
       );
-      localStorage.setItem("baseUrl", location.origin);
+      localStorage.setItem("baseUrl", JSON.stringify(location.origin));
     </script>
-    <script src="./effects.js?v=31"></script>
+    <script src="./effects.js?v=32"></script>
     <script type="module" crossorigin src="./assets/main-CKgUHFa9.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/main-QEkl09-0.css" />
     <style>

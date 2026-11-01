@@ -16,7 +16,10 @@
       savedBackground.includes("ceiling-window-room-night") ||
       savedBackground.includes("cityscape")
     ) {
-      localStorage.setItem("backgroundUrl", "/bg/cozy-live-room.png");
+      localStorage.setItem(
+        "backgroundUrl",
+        JSON.stringify("/bg/cozy-live-room.png")
+      );
     }
   } catch (_) {
     /* localStorage can be unavailable in privacy mode */
