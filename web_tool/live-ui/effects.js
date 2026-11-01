@@ -223,6 +223,14 @@
   const isLiveViewPage = window.location.pathname.includes("live-view");
   let bgmAudio = null;
   let bgmAutoplayBlocked = false;
+  let bgmCandidateIndex = 0;
+  const bgmCandidates = [
+    // Drop an authorized copy here to use it as the default BGM. The
+    // fallback keeps the stream usable when no local track is present.
+    "/bg/jietuo-pulizi.wav?v=1",
+    "/bg/jietuo-pulizi.mp3?v=1",
+    "/bg/cozy-cute-bgm.wav?v=1",
+  ];
   let liveStageTransformKey = "";
   let liveResizeKey = "";
 
@@ -386,14 +394,27 @@
     if (!isLiveViewPage || bgmAudio) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("bgm") === "0") return;
-    bgmAudio = new NativeAudio("/bg/cozy-cute-bgm.wav?v=1");
+    bgmCandidateIndex = 0;
+    bgmAudio = new NativeAudio(bgmCandidates[bgmCandidateIndex]);
     bgmAudio.id = "dsh-bgm";
     bgmAudio.loop = true;
     bgmAudio.preload = "auto";
-    bgmAudio.volume = 0.065;
+    bgmAudio.volume = 0.05;
     bgmAudio.style.display = "none";
     bgmAudio.addEventListener("error", () => {
-      console.warn("[dsh] BGM file failed to load");
+      const next = bgmCandidates[bgmCandidateIndex + 1];
+      if (!next) {
+        console.warn("[dsh] BGM file failed to load");
+        return;
+      }
+      bgmCandidateIndex += 1;
+      bgmAudio.src = next;
+      bgmAudio.load();
+      if (!bgmAutoplayBlocked) {
+        bgmAudio.play().catch(() => {
+          bgmAutoplayBlocked = true;
+        });
+      }
     });
     document.body.appendChild(bgmAudio);
   }
@@ -418,7 +439,7 @@
     const speaking = Array.from(appAudios).some(
       (audio) => !audio.paused && !audio.ended && audio.currentTime > 0
     );
-    bgmAudio.volume = speaking ? 0.025 : 0.065;
+    bgmAudio.volume = speaking ? 0.02 : 0.05;
     if (bgmAudio.paused && !bgmAutoplayBlocked) {
       bgmAudio.play().catch(() => {
         bgmAutoplayBlocked = true;
