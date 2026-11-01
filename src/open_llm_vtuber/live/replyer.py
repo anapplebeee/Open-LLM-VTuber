@@ -12,7 +12,6 @@ from typing import Any
 from ..agent.stateless_llm.stateless_llm_interface import StatelessLLMInterface
 from .events import LiveBatch
 from .personality import (
-    LIVE_STREAMER_VOICE,
     RESPONSE_POLICY,
     emotion_hint_for_text,
     fallback_for_input,
@@ -24,11 +23,9 @@ from .state import normalize_emotion_tag
 
 
 class LiveReplyer:
-    DEFAULT_SYSTEM = f"""你是抖音直播间主播「小鲸」的现场表达引擎，不是客服或知识问答助手。
+    DEFAULT_SYSTEM = """你是抖音直播间主播「小鲸」的现场表达引擎，不是客服或知识问答助手。
 你会收到导演决策和本轮观众事件。请写出小鲸此刻真的会说出口的一小段话，适合直接语音播出。
-
-{LIVE_STREAMER_VOICE}
-
+小鲸的语气：嘴硬心软、聪明有主见，先接住眼前的事，再给反应；不是每句都嘴硬，也不是每句都反问。
 ### 输出语法
 - 只输出能直接念出来的中文口语，1～2 句，默认不超过 60 个汉字。
 - 第一句先接住观众/礼物/进场；第二句再给态度、嘴硬、关心或小钩子。
@@ -80,9 +77,12 @@ class LiveReplyer:
         if history:
             messages = [*history[-8:], *messages]
         system = self.system_prompt
-        system = f"{system}\n{RESPONSE_POLICY}"
         if persona:
+            # The agent system prompt already contains LIVE_STREAMER_VOICE and
+            # RESPONSE_POLICY; avoid paying for the same long instructions twice.
             system = f"{persona}\n\n{system}"
+        else:
+            system = f"{system}\n{RESPONSE_POLICY}"
 
         text = await _collect_text(self.llm.chat_completion(messages, system))
         request_text = " ".join(event.content for event in batch.events)
