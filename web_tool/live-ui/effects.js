@@ -774,8 +774,20 @@
     });
   }
 
+  function hasMarkedSubtitleAncestor(box) {
+    let node = box?.parentElement;
+    while (node && node !== document.body) {
+      if (node.dataset && node.dataset.dshSubtitleBox === "1") return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   function compactSubtitleBox(box) {
     if (!box) return;
+    // The OLV subtitle is a nested pair of divs. Attaching the drag handler
+    // to both makes the inner node move twice; only the outer box owns drag.
+    if (hasMarkedSubtitleAncestor(box)) return;
     const text = box.querySelector("p");
     if (text) {
       text.style.setProperty("font-size", "clamp(16px, 1.05vw, 20px)", "important");
@@ -824,6 +836,7 @@
         compactSubtitleBox(el);
         continue;
       }
+      if (hasMarkedSubtitleAncestor(el)) continue;
       const style = getComputedStyle(el);
       const bg = style.backgroundColor.replace(/\s+/g, "");
       const text = (el.textContent || "").trim();
