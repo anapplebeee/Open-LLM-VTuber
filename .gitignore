@@ -6,7 +6,7 @@ conf.yaml
 !/backgrounds/README.md
 !/backgrounds/cozy-live-room.png
 !/backgrounds/cozy-live-room.svg
-!/backgrounds/cozy-lofi-bgm.wav
+!/backgrounds/cozy-cute-bgm.wav
 
 # ignore non-default live2d models
 /live2d-models/*

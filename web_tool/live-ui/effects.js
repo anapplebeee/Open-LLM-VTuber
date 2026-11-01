@@ -369,7 +369,7 @@
     if (!isLiveViewPage || bgmAudio) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("bgm") === "0") return;
-    bgmAudio = new NativeAudio("/bg/cozy-lofi-bgm.wav");
+    bgmAudio = new NativeAudio("/bg/cozy-cute-bgm.wav?v=1");
     bgmAudio.id = "dsh-bgm";
     bgmAudio.loop = true;
     bgmAudio.preload = "auto";
