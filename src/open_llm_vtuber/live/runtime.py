@@ -117,6 +117,7 @@ class LiveSession:
         self._pending_song_result: Any = None
         self._pending_song_control: str | None = None
         self._song_tasks: set[asyncio.Task[None]] = set()
+        self._last_join_ms: dict[str, int] = {}
         self.rundown = rundown
         if self.rundown is not None and hasattr(self.agent, "_rundown_state"):
             self.agent._rundown_state = self.rundown
@@ -302,12 +303,36 @@ class LiveSession:
     def ingest(self, event: RoomEvent) -> bool:
         if not self._running:
             return False
+        if event.type == "join" and self._is_duplicate_join(event):
+            logger.debug(
+                "Ignoring repeated join for {} in room {}",
+                event.user.name,
+                event.room_id,
+            )
+            return False
         accepted = self.director.ingest(self._with_song_request(event))
         if accepted:
             self._dispatch_pending_song()
         else:
             self._pending_song_result = None
         return accepted
+
+    def _is_duplicate_join(self, event: RoomEvent, *, window_ms: int = 60_000) -> bool:
+        """Suppress dyhub's repeated member events for the same viewer."""
+        key = f"{event.platform}:{event.room_id}:{event.user.id or event.user.name}"
+        now = event.received_at_ms or self._now_ms()
+        last = self._last_join_ms.get(key)
+        if last is not None and now - last < window_ms:
+            return True
+        self._last_join_ms[key] = now
+        if len(self._last_join_ms) > 500:
+            cutoff = now - window_ms
+            self._last_join_ms = {
+                item_key: item_ms
+                for item_key, item_ms in self._last_join_ms.items()
+                if item_ms >= cutoff
+            }
+        return False
 
     def _with_song_request(self, event: RoomEvent) -> RoomEvent:
         """Handle point-song commands before the LLM planner sees the event."""
@@ -381,10 +406,10 @@ class LiveSession:
             )
 
     async def play_song_target(
-        self, title: str, entry_id: str = ""
+        self, title: str, entry_id: str = "", query: str = ""
     ) -> None:
         """Resolve one queued track and ask the frontend to jump to it."""
-        await self._play_song(title, entry_id, play_now=True)
+        await self._play_song(title, entry_id, query=query, play_now=True)
 
     async def _play_song(
         self,
@@ -398,6 +423,7 @@ class LiveSession:
             song = await self.song_provider.resolve(query or title)
             if song is None:
                 logger.warning("No playable NetEase result for: {}", title)
+                await self._notify_song_unavailable(title, entry_id, "not_found")
                 return
             payload = {
                 "type": "song",
@@ -413,6 +439,25 @@ class LiveSession:
             await self.on_song(payload)
         except Exception:
             logger.exception("Song playback dispatch failed for: {}", title)
+            await self._notify_song_unavailable(title, entry_id, "resolve_error")
+
+    async def _notify_song_unavailable(
+        self, title: str, entry_id: str, reason: str
+    ) -> None:
+        """Tell the viewer to skip a track instead of wedging the queue."""
+        if self.on_song is not None:
+            try:
+                await self.on_song(
+                    {
+                        "type": "song-unavailable",
+                        "entry_id": entry_id,
+                        "title": title,
+                        "reason": reason,
+                    }
+                )
+            except Exception:
+                logger.exception("Failed to notify unavailable song: {}", title)
+        await self.finish_song(title, entry_id)
 
     def ingest_bilibili(self, payload: dict[str, Any]) -> bool:
         if not self._running:

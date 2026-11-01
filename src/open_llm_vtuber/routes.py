@@ -389,6 +389,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                         await live_session.play_song_target(
                             str(message.get("title") or ""),
                             str(message.get("entry_id") or ""),
+                            str(message.get("query") or ""),
                         )
                 elif message.get("type") == "song-finished":
                     if live_session is not None:

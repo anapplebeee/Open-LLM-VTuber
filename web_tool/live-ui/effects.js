@@ -192,6 +192,8 @@
               window.__dshQueueSong?.(message);
             } else if (message.type === "song-control") {
               window.__dshSongControl?.(message.action || "");
+            } else if (message.type === "song-unavailable") {
+              window.__dshSongUnavailable?.(message);
             } else if (message.type === "backend-synth-complete") {
               window.__dshBackendSpeechDone?.();
             }
@@ -2106,6 +2108,7 @@
       type: "song-play-target",
       entry_id: String(item.id || ""),
       title,
+      query: String(item.query || ""),
     });
     if (sent) showSongChip("正在准备这首歌…");
     return Boolean(sent);
@@ -2166,6 +2169,7 @@
         type: "song-play-target",
         entry_id: String(item.id || ""),
         title,
+        query: String(item.query || ""),
       });
       showSongChip(
         sent ? "正在准备这首歌…" : "这首歌的播放地址还没取到"
@@ -2311,6 +2315,36 @@
         if (pendingSong) playSong(pendingSong);
       }, 500);
     }
+  };
+
+  window.__dshSongUnavailable = (message = {}) => {
+    const title = String(message.title || "").trim();
+    const entryId = String(message.entry_id || "");
+    const index = songQueue.findIndex(
+      (item) =>
+        (entryId && String(item.id || "") === entryId) ||
+        (!entryId && String(item.title || "").trim() === title)
+    );
+    if (index >= 0) songQueue.splice(index, 1);
+    if (title) songData.delete(title);
+    const isCurrent =
+      (entryId && currentEntryId === entryId) ||
+      (!entryId && currentSongTitle.trim() === title);
+    if (isCurrent && songAudio) {
+      try {
+        songAudio.pause();
+      } catch (_) {
+        /* already stopped */
+      }
+      songAudio = null;
+      currentEntryId = "";
+      currentSongTitle = "";
+      currentQueueIndex = -1;
+    }
+    renderPlaylist();
+    updateSongControls();
+    showSongChip(`《${title || "这首歌"}》暂时不可播，已跳过`);
+    if (isCurrent) playQueueFrom(index >= 0 ? index : 0);
   };
 
   window.__dshSongControl = (action) => {

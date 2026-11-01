@@ -36,7 +36,7 @@ _TITLE = re.compile(
 )
 _LIST = re.compile(r"^(?:点歌列表|點歌列表|歌单|歌單|队列|隊列|songlist)$")
 _BARE = re.compile(r"^(?:点歌|點歌|song|播放|想听|想聽|来一首|來一首)$")
-_ARTIST_TITLE = re.compile(r"^(.{1,24}?)(?:演唱|唱的|唱)的*(.{1,48})$")
+_ARTIST_TITLE = re.compile(r"^(.{2,20}?)(?:演唱|唱的|唱)的*(.{1,48})$")
 _CANCEL = re.compile(r"^(?:取消点歌|取消點歌|撤掉点歌|删掉点歌|刪掉點歌)\s*(.*)$")
 _DUPLICATE_PUNCT = re.compile(r"[\s，,。.!！？?、~～·]+")
 _PLAYBACK_CONTROL = re.compile(

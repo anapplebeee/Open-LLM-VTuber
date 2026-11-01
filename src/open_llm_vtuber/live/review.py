@@ -50,6 +50,10 @@ class LiveReviewLogger:
         if not items and not reply:
             return None
         timestamp = int(now_ms if now_ms is not None else time.time() * 1000)
+        # Test harnesses historically passed synthetic millisecond counters
+        # (e.g. 1000), which produced 1970-01-01 rows in the production log.
+        if timestamp < 946_684_800_000:
+            return None
         record = {
             "ts": datetime.fromtimestamp(timestamp / 1000).isoformat(timespec="seconds"),
             "ts_ms": timestamp,

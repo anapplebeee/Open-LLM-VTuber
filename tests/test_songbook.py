@@ -59,6 +59,23 @@ class SongRequestQueueTest(unittest.TestCase):
         url = queue.handle(event("点歌 https://example.com/a.mp3", user="u3", at=1_000_200))
         self.assertEqual(url.action, "rejected")
 
+    def test_artist_title_and_follow_up_are_supported(self):
+        queue = SongRequestQueue()
+        result = queue.handle(event("林峰演唱的的幼稚完"))
+        self.assertEqual(result.action, "queued")
+        self.assertEqual(result.entry.title, "幼稚完 - 林峰")
+        self.assertEqual(result.entry.query, "幼稚完 林峰")
+
+    def test_common_sentence_is_not_mistaken_for_song_request(self):
+        queue = SongRequestQueue()
+        self.assertIsNone(queue.handle(event("你唱的歌真好听")))
+
+    def test_play_yishou_prefix_is_removed(self):
+        queue = SongRequestQueue()
+        result = queue.handle(event("播放一首幼稚完"))
+        self.assertEqual(result.action, "queued")
+        self.assertEqual(result.entry.title, "幼稚完")
+
     def test_only_self_can_cancel(self):
         queue = SongRequestQueue()
         queue.handle(event("点歌 海底", user="u1"))

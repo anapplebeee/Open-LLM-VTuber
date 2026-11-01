@@ -82,3 +82,7 @@ private/
 mcp_servers.json
 
 .vscode/
+# generated danmaku test corpora
+data/test-danmaku/corpus-*
+data/test-danmaku/*.test-sheet.md
+data/test-danmaku/*.meta.json
