@@ -104,7 +104,7 @@
 ## 3. 当前测试
 
 ```text
-102 tests passed
+104 tests passed
 ```
 
 新增覆盖：

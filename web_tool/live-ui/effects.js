@@ -215,6 +215,200 @@
     sparkle = layer.querySelector(".dsh-fx-sparkle");
   }
 
+  const isLiveViewPage = window.location.pathname.includes("live-view");
+  let bgmAudio = null;
+  let bgmAutoplayBlocked = false;
+
+  function readStageSetting(name, fallback) {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = params.get(name);
+      if (fromUrl !== null && fromUrl !== "") {
+        const value = Number(fromUrl);
+        if (Number.isFinite(value)) {
+          localStorage.setItem(`dsh-stage-${name}`, String(value));
+          return value;
+        }
+      }
+      const saved = Number(localStorage.getItem(`dsh-stage-${name}`));
+      return Number.isFinite(saved) && saved !== 0 ? saved : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function applyLiveStageTransform() {
+    if (!isLiveViewPage) return;
+    const wrapper = document.querySelector("#live2d-internal-wrapper");
+    if (!wrapper) return;
+    const scale = Math.max(0.4, Math.min(2.5, readStageSetting("scale", 1)));
+    const x = Math.max(-500, Math.min(500, readStageSetting("x", 0)));
+    const y = Math.max(-500, Math.min(500, readStageSetting("y", 0)));
+    wrapper.style.transformOrigin = "50% 100%";
+    wrapper.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    const canvas = wrapper.querySelector("canvas#canvas");
+    if (canvas) {
+      canvas.style.setProperty("width", "100%", "important");
+      canvas.style.setProperty("height", "100%", "important");
+    }
+  }
+
+  function adaptLiveViewLayout() {
+    if (!isLiveViewPage) return;
+    const wrapper = document.querySelector("#live2d-internal-wrapper");
+    if (!wrapper) return;
+    const stage = wrapper.parentElement;
+    const root = stage?.parentElement;
+    if (!stage || !root) return;
+    const app = [...root.children].find((node) => node !== stage);
+    if (!app) return;
+
+    const sidebar = app.children[0];
+    const main = app.children[1];
+    if (sidebar) sidebar.style.setProperty("display", "none", "important");
+    if (main) {
+      main.style.setProperty("position", "fixed", "important");
+      main.style.setProperty("inset", "0", "important");
+      main.style.setProperty("width", "100vw", "important");
+      main.style.setProperty("height", "100vh", "important");
+      main.style.setProperty("margin", "0", "important");
+
+      const input = main.querySelector("input,textarea");
+      if (input) {
+        let footer = input;
+        while (footer.parentElement && footer.parentElement !== main) {
+          footer = footer.parentElement;
+        }
+        footer.style.setProperty("display", "none", "important");
+      }
+      for (const child of [...main.children]) {
+        const text = (child.textContent || "").trim();
+        if (text === "已连接" || text === "连接中" || text === "点击重新连接") {
+          child.style.setProperty("display", "none", "important");
+        }
+      }
+    }
+
+    stage.style.setProperty("position", "fixed", "important");
+    stage.style.setProperty("inset", "0", "important");
+    stage.style.setProperty("left", "0", "important");
+    stage.style.setProperty("top", "0", "important");
+    stage.style.setProperty("width", "100vw", "important");
+    stage.style.setProperty("height", "100vh", "important");
+    stage.style.setProperty("z-index", "5", "important");
+    applyLiveStageTransform();
+    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+  }
+
+  function ensureStageControls() {
+    if (!isLiveViewPage) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("controls") !== "1" || document.getElementById("dsh-stage-controls")) {
+      return;
+    }
+    const panel = document.createElement("div");
+    panel.id = "dsh-stage-controls";
+    panel.style.cssText = [
+      "position:fixed",
+      "left:16px",
+      "bottom:16px",
+      "z-index:10001",
+      "width:250px",
+      "padding:12px 14px",
+      "border:1px solid rgba(160,200,240,.3)",
+      "border-radius:12px",
+      "background:rgba(10,16,26,.9)",
+      "backdrop-filter:blur(10px)",
+      "color:#dceeff",
+      "font:12px/1.5 system-ui,sans-serif",
+      "box-shadow:0 12px 34px rgba(0,0,0,.4)",
+    ].join(";");
+    const makeRow = (label, name, min, max, step, value) => {
+      const row = document.createElement("label");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;margin:7px 0;";
+      const span = document.createElement("span");
+      span.textContent = label;
+      span.style.cssText = "flex:0 0 48px;color:#9fc4e2;";
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(value);
+      input.style.cssText = "flex:1;accent-color:#8bbce8;";
+      input.addEventListener("input", () => {
+        localStorage.setItem(`dsh-stage-${name}`, input.value);
+        applyLiveStageTransform();
+      });
+      row.append(span, input);
+      return row;
+    };
+    panel.appendChild(makeRow("缩放", "scale", 0.4, 2.5, 0.05, readStageSetting("scale", 1)));
+    panel.appendChild(makeRow("水平", "x", -500, 500, 5, readStageSetting("x", 0)));
+    panel.appendChild(makeRow("垂直", "y", -500, 500, 5, readStageSetting("y", 0)));
+
+    const close = document.createElement("button");
+    close.textContent = "隐藏面板";
+    close.style.cssText = [
+      "margin-top:7px",
+      "width:100%",
+      "padding:5px 8px",
+      "border:1px solid rgba(160,200,240,.22)",
+      "border-radius:6px",
+      "background:rgba(255,255,255,.06)",
+      "color:#cfe5f8",
+      "cursor:pointer",
+      "font:12px system-ui,sans-serif",
+    ].join(";");
+    close.addEventListener("click", () => panel.remove());
+    panel.appendChild(close);
+    document.body.appendChild(panel);
+  }
+
+  function ensureBgm() {
+    if (!isLiveViewPage || bgmAudio) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("bgm") === "0") return;
+    bgmAudio = new NativeAudio("/bg/cozy-lofi-bgm.wav");
+    bgmAudio.id = "dsh-bgm";
+    bgmAudio.loop = true;
+    bgmAudio.preload = "auto";
+    bgmAudio.volume = 0.065;
+    bgmAudio.style.display = "none";
+    bgmAudio.addEventListener("error", () => {
+      console.warn("[dsh] BGM file failed to load");
+    });
+    document.body.appendChild(bgmAudio);
+  }
+
+  function bgmRequestedSongActive() {
+    return Boolean(
+      songAudio || pendingSong || currentSongTitle || songQueue.length > 0
+    );
+  }
+
+  function syncBgm() {
+    if (!isLiveViewPage) return;
+    ensureBgm();
+    if (!bgmAudio) return;
+    if (bgmRequestedSongActive()) {
+      // Requested music owns the audio path. Keep the BGM fully silent until
+      // the queue is empty, including between two requested songs.
+      bgmAudio.volume = 0;
+      if (!bgmAudio.paused) bgmAudio.pause();
+      return;
+    }
+    const speaking = Array.from(appAudios).some(
+      (audio) => !audio.paused && !audio.ended && audio.currentTime > 0
+    );
+    bgmAudio.volume = speaking ? 0.025 : 0.065;
+    if (bgmAudio.paused && !bgmAutoplayBlocked) {
+      bgmAudio.play().catch(() => {
+        bgmAutoplayBlocked = true;
+      });
+    }
+  }
+
   function enforceCozyBackground() {
     for (const img of document.querySelectorAll("img")) {
       const src = img.currentSrc || img.src || "";
@@ -328,6 +522,8 @@
   function updatePresenceBubble() {
     ensurePresenceBubble();
     enforceCozyBackground();
+    adaptLiveViewLayout();
+    applyLiveStageTransform();
     positionPresenceBubble();
     const next = window.__dshWorkMode ? "工作中" : currentPresence();
     const textEl = presenceEl.querySelector(".dsh-presence-text");
@@ -1504,12 +1700,26 @@
     ensurePlaylist();
     ensurePresenceBubble();
     enforceCozyBackground();
+    adaptLiveViewLayout();
+    ensureStageControls();
     pinSubtitlePosition();
     positionEffectLayer();
     updatePresenceBubble();
     clearInterval(presenceTimer);
     presenceTimer = setInterval(updatePresenceBubble, 500);
     setInterval(syncReplyContextPosition, 180);
+    if (isLiveViewPage) {
+      syncBgm();
+      setInterval(syncBgm, 300);
+      document.addEventListener(
+        "pointerdown",
+        () => {
+          bgmAutoplayBlocked = false;
+          syncBgm();
+        },
+        { passive: true }
+      );
+    }
     window.addEventListener("resize", updatePresenceBubble);
     window.addEventListener("resize", () => {
       if (replyContext) attachReplyContext();
