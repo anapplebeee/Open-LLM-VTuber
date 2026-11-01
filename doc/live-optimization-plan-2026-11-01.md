@@ -140,7 +140,7 @@ live-view.jsx
 - [x] 直播健康检查脚本
 - [x] CABLE 音频 RMS 检查脚本（本次实测 RMS 0.005802）
 - [x] dyhub 独立房间 Cookie 设置脚本
-- [x] Python 108 tests
+- [x] Python 111 tests（含歌曲失败、进场去重回归测试）
 
 ### Phase 2：播放与前端结构
 

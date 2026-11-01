@@ -394,6 +394,24 @@ class LiveCoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(map_bilibili_payload({"message_type": "enter"}))
 
 
+class JoinDedupTest(unittest.TestCase):
+    def test_repeated_join_is_suppressed_for_same_viewer(self):
+        session = LiveSession(agent=None, on_output=lambda _: None)
+        first = event("join-1", event_type="join", text="")
+        second = event("join-2", event_type="join", text="")
+        self.assertFalse(session._is_duplicate_join(first))
+        self.assertTrue(session._is_duplicate_join(second))
+        other = RoomEvent(
+            id="join-3",
+            type="join",
+            platform="simulated",
+            received_at_ms=1000,
+            user={"id": "u2", "name": "另一个人"},
+            content="",
+        )
+        self.assertFalse(session._is_duplicate_join(other))
+
+
 async def _append(target: list[object], value: object) -> None:
     target.append(value)
 
