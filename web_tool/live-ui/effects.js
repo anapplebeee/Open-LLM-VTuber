@@ -583,6 +583,26 @@
     document.body.appendChild(replyContextEl);
   }
 
+  function syncReplyContextPosition() {
+    if (!replyContext || !replyContextEl) return;
+    const box = findSubtitleBox();
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    if (!rect.width) return;
+    const nextLeft = rect.left;
+    const nextTop = Math.max(8, rect.top - 23);
+    const currentLeft = parseFloat(replyContextEl.style.left);
+    const currentTop = parseFloat(replyContextEl.style.top);
+    if (
+      !Number.isFinite(currentLeft) ||
+      !Number.isFinite(currentTop) ||
+      Math.abs(currentLeft - nextLeft) > 1 ||
+      Math.abs(currentTop - nextTop) > 1
+    ) {
+      attachReplyContext();
+    }
+  }
+
   function scheduleReplyContext() {
     for (const timer of replyContextTimers) clearTimeout(timer);
     replyContextTimers = [];
@@ -1449,6 +1469,7 @@
     updatePresenceBubble();
     clearInterval(presenceTimer);
     presenceTimer = setInterval(updatePresenceBubble, 500);
+    setInterval(syncReplyContextPosition, 180);
     window.addEventListener("resize", updatePresenceBubble);
     window.addEventListener("resize", () => {
       if (replyContext) attachReplyContext();
