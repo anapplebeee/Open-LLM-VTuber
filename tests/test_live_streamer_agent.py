@@ -183,7 +183,7 @@ class LiveStreamerWrapperTest(unittest.IsolatedAsyncioTestCase):
                     platform="test",
                     received_at_ms=1,
                     user={"id": "u1", "name": "观众"},
-                    content="你好",
+                    content="今天聊什么",
                 ),
             ),
         )

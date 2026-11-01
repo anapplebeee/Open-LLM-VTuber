@@ -24,11 +24,12 @@ from ...live.personality import (
     LiveInteractionPolicy,
     emotion_hint_for_text,
     fallback_for_input,
+    fast_live_reply,
     fallback_for_text,
     sanitize_live_reply,
 )
 from ...live.memes import meme_system_guide
-from ...live.planner import LiveDecision, LiveReActPlanner
+from ...live.planner import LiveDecision, LiveReActPlanner, RuleBasedLivePlanner
 from ...live.programming_guard import (
     PROGRAMMING_POLICY,
     constrain_programming_reply,
@@ -182,6 +183,16 @@ class LiveStreamerAgent(BasicMemoryAgent):
             logger.debug("Live batch suppressed by interaction policy: {}", policy.reason)
             return
 
+        fast_reply = fast_live_reply(batch)
+        if fast_reply is not None:
+            self._add_message(
+                "\n".join(event.to_agent_text() for event in batch.events), "user"
+            )
+            self._add_message(fast_reply, "assistant")
+            async for output in self._stream_live_text(fast_reply):
+                yield output
+            return
+
         context_packet = getattr(self, "_context_packet", None)
         if context_packet is not None:
             context_text = context_packet.prompt_block()
@@ -200,12 +211,18 @@ class LiveStreamerAgent(BasicMemoryAgent):
             context_text = rundown_text
             recent_recap = self._session_recap
         history = list(self._memory[-20:])
-        decision = self._live_planner.plan(
-            batch,
-            rundown_text=rundown_text,
-            recent_recap=recent_recap,
-            history=history,
-        )
+        if batch.kind == "chat":
+            # Chat always replies under the live policy; the extra LLM
+            # planner call only adds latency. Keep the LLM planner for gifts,
+            # operator notes and proactive runs.
+            decision = RuleBasedLivePlanner().plan(batch)
+        else:
+            decision = self._live_planner.plan(
+                batch,
+                rundown_text=rundown_text,
+                recent_recap=recent_recap,
+                history=history,
+            )
         if inspect.isawaitable(decision):
             decision = await decision
         if not isinstance(decision, LiveDecision) or not decision.speak:

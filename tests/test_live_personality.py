@@ -12,6 +12,7 @@ from src.open_llm_vtuber.live.personality import (
     LiveInteractionPolicy,
     emotion_hint_for_text,
     fallback_for_text,
+    fast_live_reply,
     fit_to_budget,
     is_generic_assistant_boilerplate,
     is_identity_claim,
@@ -181,6 +182,12 @@ class LiveReplySanitizerTest(unittest.TestCase):
         previous = ["今天我们一起吐泡泡，开心地游来游去。"]
         self.assertFalse(gate.verdict("今天我们一起吐泡泡，开心地游来游去。", previous).passed)
         self.assertTrue(gate.verdict("这题我会，先让我想一想。", previous).passed)
+
+    def test_fast_reply_covers_time_greeting_and_control(self):
+        self.assertIn("现在是", fast_live_reply(make_batch("现在几点了")))
+        self.assertEqual(fast_live_reply(make_batch("你好")), GREETING_FALLBACK)
+        self.assertEqual(fast_live_reply(make_batch("切歌")), "行，切了。")
+        self.assertIsNone(fast_live_reply(make_batch("你唱的歌真好听")))
 
     def test_internal_terms_and_budget_helpers(self):
         self.assertEqual(sanitize_internal_terms("deleg_123_4 和 obs_abcdef12"), "一个任务 和 一次观察")

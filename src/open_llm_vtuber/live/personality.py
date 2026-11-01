@@ -273,6 +273,53 @@ def fallback_for_text(text: str) -> str | None:
     return None
 
 
+_TIME_QUERY = re.compile(
+    r"(现在|当前)?(几点了?|什么时间|时间是多少|今天几号|今天日期|今天星期几|星期几)"
+)
+_FAST_GREETING = re.compile(
+    r"^(?:你好|您好|嗨|hi|hello|在吗)[呀啊？?！!。]*$", re.IGNORECASE
+)
+_FAST_IDENTITY = re.compile(r"^(?:你是谁|叫什么|什么身份|介绍一下自己)$")
+_FAST_CONTROL_TEXT = {
+    "next": "行，切了。",
+    "prev": "好，倒回去。",
+    "pause": "好，先停一下。",
+    "resume": "继续放着。",
+    "stop": "好，关了。",
+}
+
+
+def fast_live_reply(batch: Any, *, now: Any = None) -> str | None:
+    """Return a deterministic reply for latency-sensitive, low-risk inputs."""
+    from datetime import datetime
+
+    events = getattr(batch, "events", ())
+    if getattr(batch, "kind", "") == "gift":
+        gift_event = next((event for event in events if getattr(event, "gift", None)), None)
+        if gift_event is not None:
+            return f"谢谢{gift_event.user.name}的{gift_event.gift.name}，收到啦。"
+    text = " ".join(
+        str(getattr(event, "content", "") or "").strip() for event in events
+    ).strip()
+    if not text:
+        return None
+    if len(text) <= 24 and _TIME_QUERY.search(text):
+        current = now or datetime.now().astimezone()
+        weekdays = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+        return f"现在是 {current.strftime('%H:%M')}，{weekdays[current.weekday()]}。"
+    # Song controls and gift thanks should not wait for planner/replyer.
+    from .songbook import detect_song_control
+
+    control = detect_song_control(text)
+    if control in _FAST_CONTROL_TEXT:
+        return _FAST_CONTROL_TEXT[control]
+    if _FAST_GREETING.match(text):
+        return GREETING_FALLBACK
+    if _FAST_IDENTITY.match(text):
+        return IDENTITY_FALLBACK
+    return None
+
+
 def fallback_for_input(text: str) -> str | None:
     """Choose the repair line from the viewer's actual intent, not only the bad reply."""
     clean = (text or "").strip()
