@@ -74,33 +74,30 @@ async def _read_events(limit: int = 40) -> list[dict[str, Any]]:
 
 
 def _resources() -> dict[str, Any]:
+    """Read the OLV process RSS without scanning every Windows process.
+
+    Full process enumeration is intentionally avoided: on Windows it can stall
+    behind protected processes and it would make the dashboard itself a
+    resource problem. External services are covered by health checks.
+    """
     try:
         import psutil  # type: ignore
-    except ImportError:
-        return {"available": False, "reason": "psutil not installed"}
-    processes = []
-    for proc in psutil.process_iter(
-        ["pid", "name", "memory_info", "cpu_percent"]
-    ):
-        try:
-            name = (proc.info.get("name") or "").lower()
-            if not any(
-                token in name
-                for token in ("python", "node", "obs64", "chrome", "msedge")
-            ):
-                continue
-            memory = proc.info.get("memory_info")
-            processes.append(
+
+        process = psutil.Process(os.getpid())
+        memory = process.memory_info()
+        return {
+            "available": True,
+            "source": "current-process",
+            "processes": [
                 {
-                    "pid": proc.info["pid"],
-                    "name": proc.info["name"],
-                    "rss_mb": round((memory.rss if memory else 0) / 1024 / 1024, 1),
-                    "cpu_percent": proc.info.get("cpu_percent") or 0,
+                    "pid": os.getpid(),
+                    "name": "OLV " + process.name(),
+                    "rss_mb": round(memory.rss / 1024 / 1024, 1),
                 }
-            )
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    return {"available": True, "processes": sorted(processes, key=lambda x: -x["rss_mb"])[:30]}
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001 - metrics are best effort
+        return {"available": False, "reason": type(exc).__name__}
 
 
 def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
