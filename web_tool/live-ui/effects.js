@@ -715,6 +715,11 @@
     if (!box || box.dataset.dshDragReady === "1") return;
     box.dataset.dshDragReady = "1";
     box.style.setProperty("pointer-events", "auto", "important");
+    if (box.parentElement) {
+      box.parentElement.style.setProperty("pointer-events", "auto", "important");
+    }
+    box.style.setProperty("position", "relative", "important");
+    box.style.setProperty("z-index", "10001", "important");
     box.style.cursor = "grab";
     box.style.touchAction = "none";
     box.title = "拖动字幕，双击复位";

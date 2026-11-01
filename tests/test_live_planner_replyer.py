@@ -58,11 +58,18 @@ class LivePlannerReplyerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.emotion, "happy")
         self.assertAlmostEqual(decision.intensity, 0.8)
 
-    async def test_planner_can_stay_silent(self):
+    async def test_planner_can_stay_silent_on_non_chat(self):
         llm = FakeLLM(['{"action":"silent","reason":"没有有效内容"}'])
-        decision = await LiveReActPlanner(llm).plan(batch())
+        decision = await LiveReActPlanner(llm).plan(batch("proactive"))
         self.assertFalse(decision.speak)
         self.assertEqual(decision.reason, "没有有效内容")
+
+    async def test_planner_forces_reply_for_repeated_chat(self):
+        llm = FakeLLM(['{"action":"silent","reason":"重复打招呼"}'])
+        decision = await LiveReActPlanner(llm).plan(batch())
+        self.assertTrue(decision.speak)
+        self.assertIn("chat-reply-overrides-silent", decision.reason)
+        self.assertIn("回应观众", decision.prompt)
 
     async def test_replyer_generates_only_speech(self):
         llm = FakeLLM(["今天吃鱼，感谢小蓝的弹幕。"])
