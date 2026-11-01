@@ -726,6 +726,9 @@
     let drag = null;
     box.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
+      // The subtitle is rendered as nested divs; only the outer one owns the
+      // gesture. Otherwise the inner node would move twice.
+      if (hasMarkedSubtitleAncestor(box)) return;
       const x = Number(box.dataset.dshDragX || 0);
       const y = Number(box.dataset.dshDragY || 0);
       drag = { startX: event.clientX, startY: event.clientY, x, y };
