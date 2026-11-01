@@ -93,6 +93,62 @@ PUT    /api/dashboard/rooms/{roomId}/cookie
 POST   /api/dashboard/rooms/cleanup
 POST   /api/dashboard/song/control
 GET    /api/dashboard/resources
+POST   /api/dashboard/login
+POST   /api/dashboard/logout
+GET    /api/dashboard/session
+GET    /api/dashboard/collector
+GET    /api/dashboard/tts/status
+POST   /api/dashboard/tts/start
+POST   /api/dashboard/tts/stop
+```
+
+### Dashboard 登录鉴权
+
+- 令牌文件：`data/dashboard-token.txt`
+- 可用 `DASHBOARD_TOKEN` 环境变量覆盖
+- 登录后写入 HttpOnly cookie `dsh_dashboard`
+- 除 `/api/dashboard/login` 外，所有 `/api/dashboard/*` API 都要求登录
+- 静态页面 `/dashboard/` 可打开，但数据接口返回 401，页面会显示登录框
+
+### 房间空闲自动回收
+
+后台任务 `dashboard-room-reaper` 每 5 分钟检查：
+
+```text
+live / connecting: 不处理
+closed / error:   5 分钟后删除
+stopped:          30 分钟后删除
+```
+
+可用环境变量控制：
+
+```text
+DASHBOARD_REAPER_SEC=300
+DASHBOARD_REAPER_ENABLED=0
+```
+
+### TTS 资源生命周期
+
+TTS 是当前最大内存项，已提供 Dashboard 控制：
+
+```text
+POST /api/dashboard/tts/start
+POST /api/dashboard/tts/stop
+GET  /api/dashboard/tts/status
+```
+
+启动脚本：
+
+```text
+scripts/start_tts.ps1
+```
+
+本机实测：
+
+```text
+半精度 is_half=true 在 GTX 1060 上 RSS 从约 0.9GB 涨到约 4.1GB，
+已回退 full precision；不要在生产用半精度。
+full precision 首次合成后 RSS 约 2.7GB，空闲时停止 TTS 可释放。
 ```
 
 ### 资源优化
@@ -112,30 +168,67 @@ GET    /api/dashboard/resources
 - 房间空闲自动 disconnect（按 `lastEventAt`）
 - 采集器健康检查失败自动退避，而不是持续重连
 
-## 4. Phase 2：把 dyhub 数据面收进 OLV
+## 4. Phase 2：Python 原生 Douyin collector（已落地）
 
-当前 Dashboard 已完成 **控制面收编**，但抖音协议采集仍在 dyhub。
-
-下一阶段应新增：
+已新增：
 
 ```text
-src/open_llm_vtuber/live/ingress/
-  base.py          # 统一事件接口
-  dyhub_adapter.py # 当前适配器
-  douyin_native.py # Python 原生轻量采集器
-  normalizer.py    # 抖音消息 -> RoomEvent
+src/open_llm_vtuber/live/collectors/douyin_native.py
+scripts/native_douyin_collector.py
+scripts/douyin_sign.mjs
+tests/test_douyin_native.py
 ```
 
-迁移顺序：
+数据面全部在 Python：
 
-1. 把 dyhub 的 `RoomEvent` 规范化逻辑抽成 OLV `normalizer`
-2. 用 Python 实现 lightweight WebSocket 握手、心跳、protobuf 解码
-3. 用 `LiveIngress` 接口同时支持 dyhub 和 native
-4. Dashboard 选择 `collector=native`
-5. 灰度一个测试房间，确认 chat/gift/join 完整
-6. 再移除 dyhub 进程和 bridge
+```text
+cookie 链
+-> web_rid 解析 / 开播状态
+-> X-Bogus 签名
+-> WebSocket 握手 + 5s 心跳 + ack
+-> PushFrame / gzip / Response / protobuf 解码
+-> Chat / Gift / Member -> RoomEvent
+-> OLV /live-ws
+```
 
-> 不建议直接删除 dyhub。抖音签名、protobuf、礼物字段和风控变化快，先保留可回退适配器。
+唯一的 Node 使用是 `scripts/douyin_sign.mjs`：
+
+```text
+Node 只做 signature oracle，不是数据面；
+不启动 dyhub server，不连接 dyhub HTTP/WS，不使用 dyhub_bridge.py。
+```
+
+切换方式：
+
+```text
+DASHBOARD_COLLECTOR=native
+```
+
+Dashboard 的“连接房间”会启动：
+
+```text
+python scripts/native_douyin_collector.py --room-id <web_rid>
+```
+
+或直接运行：
+
+```text
+python scripts/native_douyin_collector.py \
+  --room-id 615688226618 \
+  --olv-url ws://127.0.0.1:12393/live-ws
+```
+
+离线验证：
+
+```text
+11 tests passed: protobuf 解码 / chat / gift / member /
+room id / room status / 事件映射 / 不泄露 cookie
+```
+
+实测注意：当前测试房间在原生探测时页面返回“直播间已结束”，
+未能完成真实直播事件验证；上线前应先用一个正在直播的房间灰度。
+
+> 不建议直接删除 dyhub。抖音签名、protobuf、礼物字段和风控变化快，先保留 `DASHBOARD_COLLECTOR=dyhub` 可回退。
 
 ## 5. Phase 3：资源目标
 
@@ -168,15 +261,17 @@ Audio:    scripts/audio_health_check.py
 
 已实现：
 
-- Dashboard 控制面
+- Dashboard 控制面 + 登录鉴权
 - dyhub 房间/Cookie/清理/事件/歌曲状态聚合
+- Python 原生 Douyin collector（数据面 Python，Node 仅签名）
+- 房间空闲自动回收
+- TTS 启停生命周期
 - OLV LiveSession registry
 - 资源清理入口
 
-尚未实现：
+仍待验证 / 后续：
 
-- Python 原生抖音采集器
-- 房间空闲自动回收
-- psutil 进程图表
-- 多采集器灰度切换
-- Dashboard 登录鉴权（当前仅本机使用）
+- 原生 collector 真实直播灰度（当前测试房间页面返回已结束）
+- 多采集器自动故障切换
+- 进程级内存图表（当前为 OLV 当前进程 RSS）
+- 原生 collector 的礼物事件需要登录 Cookie

@@ -6,6 +6,7 @@ the WebSocket connections, serves static files, and manages the web tool.
 It uses FastAPI for the server and Starlette for static file serving.
 """
 
+import asyncio
 import os
 import shutil
 
@@ -14,7 +15,11 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
-from .dashboard import init_dashboard_routes
+from .dashboard import (
+    dashboard_auth_middleware,
+    init_dashboard_routes,
+    run_room_reaper,
+)
 from .routes import (
     init_client_ws_route,
     init_live_ws_route,
@@ -79,6 +84,24 @@ class WebSocketServer:
 
     def __init__(self, config: Config, default_context_cache: ServiceContext = None):
         self.app = FastAPI(title="Open-LLM-VTuber Server")  # Added title for clarity
+        self.app.middleware("http")(dashboard_auth_middleware)
+        self._dashboard_reaper_task: asyncio.Task[None] | None = None
+
+        @self.app.on_event("startup")
+        async def _start_dashboard_reaper() -> None:
+            self._dashboard_reaper_task = asyncio.create_task(
+                run_room_reaper(), name="dashboard-room-reaper"
+            )
+
+        @self.app.on_event("shutdown")
+        async def _stop_dashboard_reaper() -> None:
+            if self._dashboard_reaper_task is not None:
+                self._dashboard_reaper_task.cancel()
+                try:
+                    await self._dashboard_reaper_task
+                except asyncio.CancelledError:
+                    pass
+                self._dashboard_reaper_task = None
         self.config = config
         self.default_context_cache = (
             default_context_cache or ServiceContext()
