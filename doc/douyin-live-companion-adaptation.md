@@ -212,6 +212,22 @@ scripts/dyhub_bridge.py
 --room-id 123456789
 ```
 
+也可以使用启动脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_douyin_bridge.ps1 `
+  -RoomId 123456789
+```
+
+桥接已用本地 fake dyhub 验证通过：
+
+```text
+fake chat   -> room-event chat
+fake member -> room-event join
+```
+
+真实抖音弹幕仍需 dyhub 或已授权采集器连接自有直播间；本项目不逆向抖音私有协议。
+
 数据流：
 
 ```text
@@ -268,7 +284,7 @@ ws://127.0.0.1:12393/client-ws
 /live-view-ws 初始 set-model-and-conf -> deepseek
 /live-ws douyin-event -> /live-view-ws 收到 audio
 fake dyhub -> scripts/dyhub_bridge.py -> OLV -> live-view 收到 audio
-79 tests passed
+90 tests passed
 ```
 
 浏览器画面仍未做自动截图验证；`live-view.html` 的 Live2D canvas 需要在真实浏览器/OBS 中确认。

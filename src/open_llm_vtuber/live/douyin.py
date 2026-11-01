@@ -16,7 +16,13 @@ __all__ = ["map_douyin_payload", "map_dyhub_event"]
 
 _CHAT_METHODS = {"WebcastChatMessage", "chat", "danmaku", "comment", "message"}
 _GIFT_METHODS = {"WebcastGiftMessage", "gift", "super_chat", "superchat"}
-_JOIN_METHODS = {"WebcastRoomEnterMessage", "WebcastMemberMessage", "enter", "join"}
+_JOIN_METHODS = {
+    "WebcastRoomEnterMessage",
+    "WebcastMemberMessage",
+    "enter",
+    "join",
+    "member",
+}
 _IGNORED_METHODS = {
     "WebcastLikeMessage",
     "like",
@@ -148,7 +154,7 @@ def map_dyhub_event(payload: dict[str, Any]) -> RoomEvent | None:
     if not isinstance(payload, dict):
         return None
     event_type = str(payload.get("type") or "")
-    if event_type not in {"chat", "gift", "enter", "join"}:
+    if event_type not in {"chat", "gift", "enter", "join", "member"}:
         return None
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -162,7 +168,7 @@ def map_dyhub_event(payload: dict[str, Any]) -> RoomEvent | None:
         "room_id": payload.get("roomId") or payload.get("room_id"),
         "user": user or {},
     }
-    if event_type in {"enter", "join"}:
+    if event_type in {"enter", "join", "member"}:
         normalized["type"] = "enter"
         normalized["content"] = ""
     elif event_type == "chat":

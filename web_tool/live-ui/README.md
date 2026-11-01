@@ -7,7 +7,7 @@ This directory keeps a tracked copy of the live-stage UI customizations:
 
 ```text
 effects.js       live effects, subtitle context, song queue/player UI
-index.html       normal OLV stage entry (loads effects.js?v=12)
+index.html       normal OLV stage entry (loads effects.js?v=13)
 live-view.html   read-only live viewer entry
 ```
 

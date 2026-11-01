@@ -19,6 +19,13 @@ def queue_snapshot(client_uid: str) -> dict[str, Any]:
     return queue.snapshot() if queue is not None else {"items": [], "max_size": 8}
 
 
+def finish_song(client_uid: str, title: str) -> dict[str, Any]:
+    queue = _QUEUES.get(client_uid)
+    if queue is not None:
+        queue.remove_finished(title)
+    return queue_snapshot(client_uid)
+
+
 def handle_song_command(
     client_uid: str, text: str, human_name: str
 ) -> SongRequestResult | None:

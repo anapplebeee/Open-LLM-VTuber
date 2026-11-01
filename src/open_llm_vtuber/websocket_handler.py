@@ -22,6 +22,7 @@ from .chat_history_manager import (
     get_history_list,
 )
 from .config_manager.utils import scan_config_alts_directory, scan_bg_directory
+from .conversations.song_command import finish_song
 from .conversations.conversation_handler import (
     handle_conversation_trigger,
     handle_group_interrupt,
@@ -95,6 +96,7 @@ class WebSocketHandler:
             "audio-play-start": self._handle_audio_play_start,
             "request-init-config": self._handle_init_config_request,
             "heartbeat": self._handle_heartbeat,
+            "song-finished": self._handle_song_finished,
         }
 
     async def handle_new_connection(
@@ -275,6 +277,17 @@ class WebSocketHandler:
             chat_group_manager=self.chat_group_manager,
             client_connections=self.client_connections,
             send_group_update=self.send_group_update,
+        )
+
+    async def _handle_song_finished(
+        self, websocket: WebSocket, client_uid: str, data: dict
+    ) -> None:
+        title = str(data.get("title") or "")
+        if not title:
+            return
+        snapshot = finish_song(client_uid, title)
+        await websocket.send_text(
+            json.dumps({"type": "song-queue", **snapshot}, ensure_ascii=False)
         )
 
     async def handle_disconnect(self, client_uid: str) -> None:

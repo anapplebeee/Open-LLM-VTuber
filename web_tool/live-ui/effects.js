@@ -60,17 +60,18 @@
     window.WebSocket = EffectWebSocket;
   }
 
-  window.__dshSendText = (text) => {
+  window.__dshSendMessage = (payload) => {
     for (const socket of liveSockets) {
       if (socket.readyState === 1) {
-        socket.send(
-          JSON.stringify({ type: "text-input", text: String(text || "") })
-        );
+        socket.send(JSON.stringify(payload));
         return true;
       }
     }
     return false;
   };
+
+  window.__dshSendText = (text) =>
+    window.__dshSendMessage({ type: "text-input", text: String(text || "") });
 
   let layer = null;
   let clearTimer = 0;
@@ -291,49 +292,34 @@
     if (!replyContext) return;
     ensureReplyContext();
     replyContextEl.textContent = `回复：${replyContext}`;
-    replyContextEl.style.cssText = [
-      "display:block",
-      "width:100%",
-      "box-sizing:border-box",
-      "padding:5px 12px",
-      "border-bottom:1px solid rgba(150,190,230,.14)",
-      "background:rgba(255,255,255,.04)",
-      "color:#b4d2ea",
-      "font:12px/1.5 system-ui,sans-serif",
-      "white-space:nowrap",
-      "overflow:hidden",
-      "text-overflow:ellipsis",
-      "pointer-events:none",
-    ].join(";");
     const box = findSubtitleBox();
-    if (box) {
-      box.insertBefore(replyContextEl, box.firstChild);
-      return;
+    let anchor = box?.getBoundingClientRect();
+    if (!anchor || !anchor.width) {
+      const stage =
+        document.querySelector("#live2d-internal-wrapper") ||
+        document.querySelector("canvas#canvas")?.parentElement;
+      anchor = stage?.getBoundingClientRect();
     }
-    // Fallback while the subtitle box is not mounted yet.
+    if (!anchor || !anchor.width) return;
     replyContextEl.style.cssText = [
       "position:fixed",
       "z-index:9997",
-      "transform:translateX(-50%)",
-      "max-width:min(620px,72vw)",
-      "padding:4px 10px",
-      "border-radius:5px",
-      "background:rgba(15,22,36,.68)",
+      "box-sizing:border-box",
+      "max-width:min(560px,72vw)",
+      "padding:3px 10px",
+      "border-left:2px solid rgba(120,170,215,.85)",
+      "border-radius:5px 5px 0 0",
+      "background:rgba(15,22,36,.72)",
       "color:#b4d2ea",
-      "font:12px/1.5 system-ui,sans-serif",
+      "font:11px/1.4 system-ui,sans-serif",
       "white-space:nowrap",
       "overflow:hidden",
       "text-overflow:ellipsis",
       "pointer-events:none",
     ].join(";");
+    replyContextEl.style.left = `${anchor.left}px`;
+    replyContextEl.style.top = `${Math.max(8, anchor.top - 26)}px`;
     document.body.appendChild(replyContextEl);
-    const stage =
-      document.querySelector("#live2d-internal-wrapper") ||
-      document.querySelector("canvas#canvas")?.parentElement;
-    if (!stage) return;
-    const rect = stage.getBoundingClientRect();
-    replyContextEl.style.left = `${rect.left + rect.width / 2}px`;
-    replyContextEl.style.top = `${rect.top + rect.height - 200}px`;
   }
 
   function scheduleReplyContext() {
@@ -574,9 +560,26 @@
     songProgressFill.style.width = `${pct}%`;
   }
 
+  function notifySongFinished(title) {
+    if (!title) return;
+    window.__dshSendMessage?.({ type: "song-finished", title });
+  }
+
+  function dropFinishedSong(title) {
+    const normalized = String(title || "").trim();
+    const index = songQueue.findIndex(
+      (item) => String(item.title || "").trim() === normalized
+    );
+    if (index >= 0) songQueue.splice(index, 1);
+    return index;
+  }
+
   function stopSong() {
     pendingSong = null;
     clearTimeout(songPlayTimer);
+    const finishedTitle = currentSongTitle;
+    notifySongFinished(finishedTitle);
+    dropFinishedSong(finishedTitle);
     if (songAudio) {
       try {
         songAudio.pause();
@@ -589,6 +592,7 @@
     currentSongTitle = "";
     songArtist = "";
     songDurationMs = 0;
+    currentQueueIndex = -1;
     hideSongChip();
     renderPlaylist();
     updateSongProgress();
@@ -780,13 +784,22 @@
     audio.addEventListener("ended", () => {
       if (songAudio !== audio) return;
       songAudio = null;
+      const finishedTitle = currentSongTitle;
+      notifySongFinished(finishedTitle);
+      const removedAt = dropFinishedSong(finishedTitle);
       songArtist = "";
       songDurationMs = 0;
-      const hasNext = currentQueueIndex >= 0 && currentQueueIndex < songQueue.length - 1;
-      if (hasNext) {
-        playAdjacent(1, true);
+      currentSongTitle = "";
+      const nextIndex = removedAt >= 0 ? removedAt : Math.max(0, currentQueueIndex);
+      const nextItem = songQueue[nextIndex];
+      const nextData = nextItem
+        ? songData.get(String(nextItem.title || "").trim())
+        : null;
+      if (nextData && nextData.url) {
+        currentQueueIndex = nextIndex;
+        playSong(nextData);
       } else {
-        currentSongTitle = "";
+        currentQueueIndex = -1;
         hideSongChip();
         renderPlaylist();
         updateSongProgress();

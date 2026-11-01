@@ -73,7 +73,16 @@ class DouyinAdapterTest(unittest.TestCase):
         assert gift is not None
         self.assertEqual(gift.gift.name, "小心心")  # type: ignore[union-attr]
         self.assertEqual(gift.gift.count, 3)  # type: ignore[union-attr]
-        self.assertIsNone(map_dyhub_event({"type": "member", "data": {}}))
+        member = map_dyhub_event(
+            {
+                "type": "member",
+                "user": {"id": "u3", "nickname": "新观众"},
+                "data": {},
+            }
+        )
+        self.assertIsNotNone(member)
+        assert member is not None
+        self.assertEqual(member.type, "join")
 
 
 if __name__ == "__main__":

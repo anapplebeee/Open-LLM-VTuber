@@ -129,6 +129,14 @@ class SongRequestQueue:
             return None
         return self._enqueue(event, title_match.group(1), now)
 
+    def remove_finished(self, title: str) -> None:
+        """Remove a track after its playback has finished."""
+        normalized = _DUPLICATE_PUNCT.sub("", normalize_title(title))
+        for index, item in enumerate(self._items):
+            if _DUPLICATE_PUNCT.sub("", item.title) == normalized:
+                self._items.pop(index)
+                return
+
     def snapshot(self) -> dict[str, object]:
         return SongQueueSnapshot(
             items=[
