@@ -36,9 +36,13 @@ _TITLE = re.compile(
 )
 _LIST = re.compile(r"^(?:点歌列表|點歌列表|歌单|歌單|队列|隊列|songlist)$")
 _BARE = re.compile(r"^(?:点歌|點歌|song|播放|想听|想聽|来一首|來一首)$")
+_ARTIST_TITLE = re.compile(r"^(.{1,24}?)(?:演唱|唱的|唱)的*(.{1,48})$")
 _CANCEL = re.compile(r"^(?:取消点歌|取消點歌|撤掉点歌|删掉点歌|刪掉點歌)\s*(.*)$")
 _DUPLICATE_PUNCT = re.compile(r"[\s，,。.!！？?、~～·]+")
-_PLAYBACK_CONTROL = re.compile(r"^(?:切歌|跳过|下一首|上一首|暂停音乐|继续音乐|关闭音乐|停止音乐|关掉音乐)$")
+_PLAYBACK_CONTROL = re.compile(
+    r"^(?:切歌|跳过|下一首|上一首|暂停音乐|继续音乐|关闭音乐|停止音乐|关掉音乐|"
+    r"不是这首(?:呀|啊)?|不对(?:呀|啊)?|换一首)$"
+)
 
 
 def detect_song_control(text: str) -> str | None:
@@ -56,6 +60,13 @@ def detect_song_control(text: str) -> str | None:
         "关闭音乐": "stop",
         "停止音乐": "stop",
         "关掉音乐": "stop",
+        "不是这首": "next",
+        "不是这首呀": "next",
+        "不是这首啊": "next",
+        "不对": "next",
+        "不对呀": "next",
+        "不对啊": "next",
+        "换一首": "next",
     }
     return mapping.get(command)
 
@@ -64,7 +75,22 @@ def normalize_title(value: str) -> str:
     title = _CONTROL.sub("", value or "").strip()
     title = _BRACKETS.sub("", title)
     title = re.sub(r"\s+", " ", title).strip()
+    # "播放一首幼稚完" currently leaves "一首幼稚完"; strip the quantifier.
+    title = re.sub(r"^(?:一首歌|一首|一首曲子|首|歌曲|歌|曲)\s*", "", title).strip()
     return title[:MAX_TITLE_CHARS]
+
+
+def parse_request_title(value: str) -> tuple[str, str]:
+    """Return (display title, NetEase search query)."""
+    title = normalize_title(value)
+    match = _ARTIST_TITLE.match(title)
+    if not match:
+        return title, title
+    artist = normalize_title(match.group(1))
+    song = normalize_title(match.group(2))
+    if not artist or not song:
+        return title, title
+    return f"{song} - {artist}", f"{song} {artist}"
 
 
 @dataclass(frozen=True)
@@ -74,6 +100,7 @@ class SongRequest:
     user_name: str
     title: str
     requested_at_ms: int
+    query: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,9 +152,12 @@ class SongRequestQueue:
         if cancel_match:
             return self._cancelled(event, cancel_match.group(1), now)
         title_match = _TITLE.match(text)
-        if not title_match:
-            return None
-        return self._enqueue(event, title_match.group(1), now)
+        if title_match:
+            return self._enqueue(event, title_match.group(1), now)
+        # Follow-up corrections often omit "播放": "林峰演唱的幼稚完".
+        if _ARTIST_TITLE.match(text):
+            return self._enqueue(event, text, now)
+        return None
 
     def remove_finished(self, title: str, entry_id: str = "") -> None:
         """Remove a track after its playback has finished.
@@ -153,6 +183,7 @@ class SongRequestQueue:
                 {
                     "id": item.id,
                     "title": item.title,
+                    "query": item.query,
                     "user": item.user_name,
                     "position": index + 1,
                 }
@@ -162,7 +193,7 @@ class SongRequestQueue:
         ).to_dict()
 
     def _enqueue(self, event: RoomEvent, raw_title: str, now: int) -> SongRequestResult:
-        title = normalize_title(raw_title)
+        title, query = parse_request_title(raw_title)
         if not title:
             return SongRequestResult("rejected", f"没听清歌名，格式：{USAGE}")
         if _URL.search(title):
@@ -193,6 +224,7 @@ class SongRequestQueue:
             user_name=event.user.name,
             title=title,
             requested_at_ms=now,
+            query=query,
         )
         self._items.append(entry)
         self._last_request_ms[key] = now

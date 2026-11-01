@@ -362,7 +362,11 @@ class LiveSession:
         if result.action != "queued" or result.entry is None:
             return
         task = asyncio.create_task(
-            self._play_song(result.entry.title, result.entry.id),
+            self._play_song(
+                result.entry.title,
+                result.entry.id,
+                query=result.entry.query,
+            ),
             name=f"live-song-{result.entry.id}",
         )
         self._song_tasks.add(task)
@@ -383,10 +387,15 @@ class LiveSession:
         await self._play_song(title, entry_id, play_now=True)
 
     async def _play_song(
-        self, title: str, entry_id: str = "", *, play_now: bool = False
+        self,
+        title: str,
+        entry_id: str = "",
+        *,
+        query: str = "",
+        play_now: bool = False,
     ) -> None:
         try:
-            song = await self.song_provider.resolve(title)
+            song = await self.song_provider.resolve(query or title)
             if song is None:
                 logger.warning("No playable NetEase result for: {}", title)
                 return
