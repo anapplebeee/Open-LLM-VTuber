@@ -1331,6 +1331,8 @@
   }
 
   let subtitleCloneEl = null;
+  let subtitleCloneLastText = "";
+  let subtitleCloneLastShownAt = 0;
 
   function applySubtitleCloneOffset() {
     if (!subtitleCloneEl) return;
@@ -1349,6 +1351,13 @@
 
   function ensureSubtitleClone() {
     if (subtitleCloneEl || !isLiveViewPage) return;
+    if (!document.getElementById("dsh-subtitle-source-hidden")) {
+      const sourceStyle = document.createElement("style");
+      sourceStyle.id = "dsh-subtitle-source-hidden";
+      sourceStyle.textContent =
+        '[data-dsh-subtitle-box="1"]{visibility:hidden !important;}';
+      document.head?.appendChild(sourceStyle);
+    }
     const el = document.createElement("div");
     el.id = "dsh-subtitle-clone";
     el.style.cssText = [
@@ -1357,8 +1366,8 @@
       "bottom:135px",
       "z-index:2147483000",
       "box-sizing:border-box",
-      "width:fit-content",
-      "max-width:min(68%,720px)",
+      "width:min(480px,68vw)",
+      "max-width:min(480px,68vw)",
       "padding:7px 17px",
       "border-radius:10px",
       "border:1px solid rgba(196,222,255,.13)",
@@ -1442,18 +1451,44 @@
     if (!isLiveViewPage) return;
     ensureSubtitleClone();
     if (!subtitleCloneEl) return;
-    const box = findSubtitleBox();
-    const text = box ? (box.innerText || "").trim() : "";
+    // Read directly from the marked subtitle nodes. findSubtitleBox() has
+    // format-specific heuristics and can return null for a custom subtitle
+    // wrapper; the clone must still mirror whatever is currently on stage.
+    const boxes = Array.from(
+      document.querySelectorAll('[data-dsh-subtitle-box="1"]')
+    )
+      .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+      .filter(({ el, rect }) => {
+        // The original is hidden with visibility:hidden, which makes
+        // innerText empty in Chromium; textContent still reflects the line.
+        const text = (el.textContent || "").trim();
+        return (
+          text.length >= 2 &&
+          text.length <= 240 &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
+      })
+      .sort((a, b) => b.rect.width - a.rect.width);
+    const box = boxes[0]?.el || null;
+    const text = box ? (box.textContent || "").trim() : "";
     if (!box || !text) {
-      subtitleCloneEl.style.display = "none";
-      if (box) box.style.visibility = "visible";
+      // Do not flash between sentences. Keep the last line briefly while the
+      // next utterance is being mounted.
+      if (Date.now() - subtitleCloneLastShownAt > 1600) {
+        subtitleCloneEl.style.display = "none";
+        subtitleCloneLastText = "";
+      }
       return;
     }
-    subtitleCloneEl.textContent = text;
-    subtitleCloneEl.style.display = "block";
-    // Keep the original in the React tree for measurement/accessibility, but
-    // hide its pixels so the document-level clone owns the visible layer.
-    box.style.visibility = "hidden";
+    subtitleCloneLastShownAt = Date.now();
+    if (text !== subtitleCloneLastText) {
+      subtitleCloneLastText = text;
+      subtitleCloneEl.textContent = text;
+    }
+    if (subtitleCloneEl.style.display !== "block") {
+      subtitleCloneEl.style.display = "block";
+    }
   }
 
   function pinSubtitlePosition() {
