@@ -33,6 +33,18 @@
           try {
             const message = JSON.parse(event.data);
             if (!message) return;
+            // Emotion tags drive Live2D actions, but must never leak into the
+            // chat bubble, subtitle, or streaming text.
+            if (
+              (message.type === "audio" || message.type === "full-text") &&
+              message.display_text &&
+              typeof message.display_text.text === "string"
+            ) {
+              message.display_text.text = message.display_text.text
+                .replace(/\[[a-zA-Z][a-zA-Z0-9_\-]{0,24}\]/g, "")
+                .replace(/[ \t]{2,}/g, " ")
+                .trim();
+            }
             if (message.type === "audio") {
               const expressions =
                 message.expressions ||
@@ -101,6 +113,7 @@
   let playlistControls = null;
   let currentSongTitle = "";
   let currentQueueIndex = -1;
+  let currentEntryId = "";
   let songDurationMs = 0;
   let songArtist = "";
   let songNowEl = null;
@@ -828,16 +841,32 @@
     songProgressFill.style.width = `${pct}%`;
   }
 
-  function notifySongFinished(title) {
-    if (!title) return;
-    window.__dshSendMessage?.({ type: "song-finished", title });
+  function notifySongFinished(title, entryId) {
+    if (!title && !entryId) return;
+    window.__dshSendMessage?.({
+      type: "song-finished",
+      title: title || "",
+      entry_id: entryId || "",
+    });
   }
 
-  function dropFinishedSong(title) {
+  function dropFinishedSong(title, entryId) {
     const normalized = String(title || "").trim();
-    const index = songQueue.findIndex(
-      (item) => String(item.title || "").trim() === normalized
-    );
+    let index = entryId
+      ? songQueue.findIndex((item) => String(item.id || "") === entryId)
+      : -1;
+    if (
+      index < 0 &&
+      currentQueueIndex >= 0 &&
+      currentQueueIndex < songQueue.length
+    ) {
+      index = currentQueueIndex;
+    }
+    if (index < 0) {
+      index = songQueue.findIndex(
+        (item) => String(item.title || "").trim() === normalized
+      );
+    }
     if (index >= 0) songQueue.splice(index, 1);
     return index;
   }
@@ -846,8 +875,10 @@
     pendingSong = null;
     clearTimeout(songPlayTimer);
     const finishedTitle = currentSongTitle;
-    notifySongFinished(finishedTitle);
-    dropFinishedSong(finishedTitle);
+    const finishedEntryId = currentEntryId;
+    notifySongFinished(finishedTitle, finishedEntryId);
+    dropFinishedSong(finishedTitle, finishedEntryId);
+    currentEntryId = "";
     if (songAudio) {
       try {
         songAudio.pause();
@@ -958,9 +989,19 @@
       };
     });
     if (currentSongTitle) {
-      currentQueueIndex = songQueue.findIndex(
-        (item) => String(item.title || "").trim() === currentSongTitle.trim()
-      );
+      currentQueueIndex = currentEntryId
+        ? songQueue.findIndex(
+            (item) => String(item.id || "") === currentEntryId
+          )
+        : -1;
+      if (currentQueueIndex < 0) {
+        currentQueueIndex = songQueue.findIndex(
+          (item) => String(item.title || "").trim() === currentSongTitle.trim()
+        );
+      }
+      if (currentQueueIndex >= 0 && !currentEntryId) {
+        currentEntryId = String(songQueue[currentQueueIndex].id || "");
+      }
     } else if (currentQueueIndex >= songQueue.length) {
       currentQueueIndex = -1;
     }
@@ -1028,13 +1069,19 @@
       songAudio = null;
     }
     currentSongTitle = String(song.title || "");
+    currentEntryId = String(song.entry_id || "");
     songArtist = String(song.artist || "");
     songDurationMs = Number(song.duration_ms) || 0;
     const title = currentSongTitle.trim();
     const index = songQueue.findIndex(
-      (item) => String(item.title || "").trim() === title
+      (item) =>
+        (currentEntryId && String(item.id || "") === currentEntryId) ||
+        String(item.title || "").trim() === title
     );
-    if (index >= 0) currentQueueIndex = index;
+    if (index >= 0) {
+      currentQueueIndex = index;
+      currentEntryId = currentEntryId || String(songQueue[index].id || "");
+    }
     songData.set(title, song);
     const audio = new NativeAudio(`/song-audio?url=${encodeURIComponent(song.url)}`);
     audio.volume = songVolume;
@@ -1053,8 +1100,10 @@
       if (songAudio !== audio) return;
       songAudio = null;
       const finishedTitle = currentSongTitle;
-      notifySongFinished(finishedTitle);
-      const removedAt = dropFinishedSong(finishedTitle);
+      const finishedEntryId = currentEntryId;
+      notifySongFinished(finishedTitle, finishedEntryId);
+      const removedAt = dropFinishedSong(finishedTitle, finishedEntryId);
+      currentEntryId = "";
       songArtist = "";
       songDurationMs = 0;
       currentSongTitle = "";
@@ -1089,12 +1138,16 @@
     const title = String(song.title || "");
     const normalized = title.trim();
     songData.set(normalized, song);
+    const entryId = String(song.entry_id || "");
     const index = songQueue.findIndex(
-      (item) => String(item.title || "").trim() === normalized
+      (item) =>
+        (entryId && String(item.id || "") === entryId) ||
+        String(item.title || "").trim() === normalized
     );
     if (index >= 0) {
       songQueue[index] = {
         ...songQueue[index],
+        id: entryId || songQueue[index].id,
         url: song.url,
         artist: song.artist || songQueue[index].artist,
         track_id: song.track_id || songQueue[index].track_id,
@@ -1104,6 +1157,9 @@
     // A new request must never replace the song that is currently audible.
     if (songAudio || pendingSong) return;
     currentSongTitle = title;
+    currentEntryId =
+      String(song.entry_id || "") ||
+      (index >= 0 ? String(songQueue[index].id || "") : "");
     songArtist = String(song.artist || "");
     songDurationMs = Number(song.duration_ms) || 0;
     currentQueueIndex = index;
@@ -1147,6 +1203,60 @@
       if (pendingSong) playSong(pendingSong);
     }, 600);
   };
+
+  const EMOTION_TAG_PATTERN =
+    /\[(?:neutral|joy|smirk|fear|surprise|sadness|anger|disgust|happy2?|puzzled|relax|unhappy|sad|excited|shy|blush)\]/gi;
+
+  function sanitizeRenderedTags(root = document.body) {
+    if (!root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (
+          !parent ||
+          /^(SCRIPT|STYLE|TEXTAREA|INPUT|CODE|PRE)$/.test(parent.tagName)
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    let node = walker.nextNode();
+    while (node) {
+      nodes.push(node);
+      node = walker.nextNode();
+    }
+    for (const textNode of nodes) {
+      const value = textNode.nodeValue || "";
+      if (!EMOTION_TAG_PATTERN.test(value)) continue;
+      EMOTION_TAG_PATTERN.lastIndex = 0;
+      const cleaned = value
+        .replace(EMOTION_TAG_PATTERN, "")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim();
+      if (cleaned !== value) textNode.nodeValue = cleaned;
+    }
+    EMOTION_TAG_PATTERN.lastIndex = 0;
+  }
+
+  let tagSanitizeFrame = 0;
+  function watchRenderedTags() {
+    sanitizeRenderedTags();
+    if (!window.MutationObserver) return;
+    const observer = new MutationObserver(() => {
+      if (tagSanitizeFrame) return;
+      tagSanitizeFrame = requestAnimationFrame(() => {
+        tagSanitizeFrame = 0;
+        sanitizeRenderedTags();
+      });
+    });
+    observer.observe(document.body, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
 
   function hideAll() {
     [fire, blushLeft, blushRight, sparkle].forEach((el) => {
@@ -1267,6 +1377,7 @@
     presenceTimer = setInterval(updatePresenceBubble, 500);
     window.addEventListener("resize", updatePresenceBubble);
     replaceThinkingLabels();
+    watchRenderedTags();
     const observer = new MutationObserver(() => {
       replaceThinkingLabels();
     });

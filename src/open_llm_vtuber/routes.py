@@ -117,6 +117,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
 
     router = APIRouter()
     live_active = False
+    live_session = None
     live_store = LiveStore()
     live_memory = MemoryManager(MemoryStore("data/xiaojing-memory.db"))
     live_output_hub = LiveOutputHub()
@@ -138,7 +139,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
 
     @router.websocket("/live-ws")
     async def live_websocket_endpoint(websocket: WebSocket):
-        nonlocal live_active
+        nonlocal live_active, live_session
         await websocket.accept()
 
         if live_active:
@@ -195,6 +196,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             recap_writer=recap_writer,
             memory=live_memory,
         )
+        live_session = session
         try:
             try:
                 await session.start()
@@ -356,6 +358,7 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             try:
                 await session.stop()
             finally:
+                live_session = None
                 live_active = False
 
     @router.websocket("/live-view-ws")
@@ -381,6 +384,12 @@ def init_live_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                     await websocket.send_text(
                         json.dumps({"type": "heartbeat-ack"})
                     )
+                elif message.get("type") == "song-finished":
+                    if live_session is not None:
+                        await live_session.finish_song(
+                            str(message.get("title") or ""),
+                            str(message.get("entry_id") or ""),
+                        )
                 elif message.get("type") == "request-init-config":
                     await send_live_view_config(websocket)
         except WebSocketDisconnect:

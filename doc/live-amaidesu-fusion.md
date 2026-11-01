@@ -53,7 +53,7 @@ Amaidesu 不作为第二个进程运行，只提供以下能力的设计和可�
 ## 验收基线
 
 ```text
-91 tests passed
+92 tests passed
 ```
 
 真实 OLV 对话矩阵：

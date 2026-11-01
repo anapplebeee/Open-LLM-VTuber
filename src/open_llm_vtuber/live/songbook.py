@@ -129,8 +129,18 @@ class SongRequestQueue:
             return None
         return self._enqueue(event, title_match.group(1), now)
 
-    def remove_finished(self, title: str) -> None:
-        """Remove a track after its playback has finished."""
+    def remove_finished(self, title: str, entry_id: str = "") -> None:
+        """Remove a track after its playback has finished.
+
+        Prefer the stable queue entry id: a resolved song title can differ from
+        the original search query, which would otherwise leave the old queue row
+        behind after playback.
+        """
+        if entry_id:
+            for index, item in enumerate(self._items):
+                if item.id == entry_id:
+                    self._items.pop(index)
+                    return
         normalized = _DUPLICATE_PUNCT.sub("", normalize_title(title))
         for index, item in enumerate(self._items):
             if _DUPLICATE_PUNCT.sub("", item.title) == normalized:

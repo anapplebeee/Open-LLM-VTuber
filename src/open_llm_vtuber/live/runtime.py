@@ -320,13 +320,21 @@ class LiveSession:
         if result.action != "queued" or result.entry is None:
             return
         task = asyncio.create_task(
-            self._play_song(result.entry.title),
+            self._play_song(result.entry.title, result.entry.id),
             name=f"live-song-{result.entry.id}",
         )
         self._song_tasks.add(task)
         task.add_done_callback(self._song_tasks.discard)
 
-    async def _play_song(self, title: str) -> None:
+    async def finish_song(self, title: str, entry_id: str = "") -> None:
+        """Remove a completed track from the live queue and re-broadcast it."""
+        self.song_requests.remove_finished(title, entry_id)
+        if self.on_song is not None:
+            await self.on_song(
+                {"type": "song-queue", **self.song_requests.snapshot()}
+            )
+
+    async def _play_song(self, title: str, entry_id: str = "") -> None:
         try:
             song = await self.song_provider.resolve(title)
             if song is None:
@@ -335,6 +343,7 @@ class LiveSession:
             payload = {
                 "type": "song",
                 "action": "play",
+                "entry_id": entry_id,
                 "track_id": song.track_id,
                 "title": song.title,
                 "artist": song.artist,

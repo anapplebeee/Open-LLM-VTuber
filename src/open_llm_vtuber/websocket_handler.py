@@ -283,9 +283,10 @@ class WebSocketHandler:
         self, websocket: WebSocket, client_uid: str, data: dict
     ) -> None:
         title = str(data.get("title") or "")
-        if not title:
+        entry_id = str(data.get("entry_id") or "")
+        if not title and not entry_id:
             return
-        snapshot = finish_song(client_uid, title)
+        snapshot = finish_song(client_uid, title, entry_id)
         await websocket.send_text(
             json.dumps({"type": "song-queue", **snapshot}, ensure_ascii=False)
         )

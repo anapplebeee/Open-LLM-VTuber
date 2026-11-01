@@ -19,10 +19,10 @@ def queue_snapshot(client_uid: str) -> dict[str, Any]:
     return queue.snapshot() if queue is not None else {"items": [], "max_size": 8}
 
 
-def finish_song(client_uid: str, title: str) -> dict[str, Any]:
+def finish_song(client_uid: str, title: str, entry_id: str = "") -> dict[str, Any]:
     queue = _QUEUES.get(client_uid)
     if queue is not None:
-        queue.remove_finished(title)
+        queue.remove_finished(title, entry_id)
     return queue_snapshot(client_uid)
 
 
@@ -53,6 +53,7 @@ def song_payload(song: ResolvedSong, result: SongRequestResult) -> dict[str, Any
     return {
         "type": "song",
         "action": "play",
+        "entry_id": entry.id if entry is not None else "",
         "track_id": song.track_id,
         "title": song.title,
         "artist": song.artist,

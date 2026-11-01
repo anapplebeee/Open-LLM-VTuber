@@ -66,6 +66,14 @@ class SongRequestQueueTest(unittest.TestCase):
         self.assertEqual(result.action, "rejected")
         self.assertIn("只能取消", result.reply_hint)
 
+    def test_finished_song_removes_by_entry_id(self):
+        queue = SongRequestQueue()
+        result = queue.handle(event("点歌 海底"))
+        entry = result.entry
+        assert entry is not None
+        queue.remove_finished("解析后不同的标题", entry.id)
+        self.assertEqual(queue.snapshot()["items"], [])
+
 
 class LiveSongIntegrationTest(unittest.TestCase):
     def test_song_command_is_enriched_before_director(self):
