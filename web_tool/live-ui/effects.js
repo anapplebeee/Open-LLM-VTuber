@@ -27,10 +27,10 @@
 
   const NativeAudio = window.Audio;
   const appAudios = new Set();
-  let voiceVolume = 1.4;
+  let voiceVolume = 1.0;
   try {
     const savedVoice = Number(localStorage.getItem("dsh-voice-volume"));
-    if (Number.isFinite(savedVoice) && savedVoice > 0.2 && savedVoice <= 2.5) {
+    if (Number.isFinite(savedVoice) && savedVoice >= 0.05 && savedVoice <= 1) {
       voiceVolume = savedVoice;
     }
   } catch (_) {
@@ -40,67 +40,27 @@
     const queryVoice = Number(
       new URLSearchParams(window.location.search).get("voice")
     );
-    if (Number.isFinite(queryVoice) && queryVoice > 0.2 && queryVoice <= 2.5) {
+    if (Number.isFinite(queryVoice) && queryVoice >= 0.05 && queryVoice <= 1) {
       voiceVolume = queryVoice;
     }
   } catch (_) {
     /* ignore */
   }
-  let voiceUnlocked = false;
-  let voiceContext = null;
-  let voiceGainNode = null;
   let voiceToastTimer = 0;
-  const voiceRouted = new WeakSet();
 
   function clampVoiceVolume(value) {
-    return Math.max(0.2, Math.min(2.5, Number(value) || 1.4));
-  }
-
-  function ensureVoiceContext() {
-    if (!voiceUnlocked) return null;
-    try {
-      if (!voiceContext) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return null;
-        voiceContext = new Ctx();
-        voiceGainNode = voiceContext.createGain();
-        voiceGainNode.gain.value = voiceVolume;
-        voiceGainNode.connect(voiceContext.destination);
-      }
-      if (voiceContext.state === "suspended") {
-        voiceContext.resume().catch(() => {});
-      }
-      return voiceContext;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function routeVoiceAudio(audio) {
-    if (!audio || voiceRouted.has(audio)) return;
-    if (!ensureVoiceContext() || !voiceGainNode) {
-      audio.volume = Math.min(1, voiceVolume);
-      return;
-    }
-    try {
-      const source = voiceContext.createMediaElementSource(audio);
-      source.connect(voiceGainNode);
-      voiceRouted.add(audio);
-    } catch (_) {
-      // The app may already route this element through WebAudio; keep it
-      // audible instead of muting it.
-      audio.volume = Math.min(1, voiceVolume);
-    }
+    return Math.max(0.05, Math.min(1, Number(value) || 1));
   }
 
   function applyVoiceVolume() {
-    if (voiceGainNode) voiceGainNode.gain.value = voiceVolume;
+    // Native media volume only. Routing TTS through AudioContext is fragile
+    // in OBS CEF (a suspended context silences all speech), so the live page
+    // must keep the native audio path that already works.
     for (const audio of appAudios) {
-      if (voiceRouted.has(audio)) continue;
-      if (voiceUnlocked) {
-        routeVoiceAudio(audio);
-      } else {
-        audio.volume = Math.min(1, voiceVolume);
+      try {
+        audio.volume = voiceVolume;
+      } catch (_) {
+        /* ignore */
       }
     }
   }
@@ -151,7 +111,7 @@
       return voiceVolume;
     },
     set: setVoiceVolume,
-    state: () => voiceContext?.state || "locked",
+    state: () => "native",
   };
 
   if (NativeAudio) {
@@ -159,7 +119,10 @@
       constructor(...args) {
         super(...args);
         appAudios.add(this);
-        this.addEventListener("play", () => routeVoiceAudio(this));
+        this.volume = voiceVolume;
+        this.addEventListener("play", () => {
+          this.volume = voiceVolume;
+        });
         this.addEventListener("ended", () => appAudios.delete(this));
       }
     }
@@ -167,13 +130,6 @@
   }
 
   function installVoiceControls() {
-    const unlock = () => {
-      if (voiceUnlocked) return;
-      voiceUnlocked = true;
-      ensureVoiceContext();
-      applyVoiceVolume();
-    };
-    document.addEventListener("pointerdown", unlock, { passive: true });
     document.addEventListener(
       "keydown",
       (event) => {
@@ -184,7 +140,7 @@
         } else if (event.key === "[" || event.key === "{") {
           setVoiceVolume(voiceVolume - 0.1);
         } else if (event.key === "\\" || event.key === "|") {
-          setVoiceVolume(1.4);
+          setVoiceVolume(1.0);
         } else {
           return;
         }
@@ -192,9 +148,7 @@
       },
       true
     );
-    // Apply the saved value as a fallback until the first user gesture, when
-    // the WebAudio gain path can be unlocked safely.
-    for (const audio of appAudios) audio.volume = Math.min(1, voiceVolume);
+    applyVoiceVolume();
   }
 
   const liveSockets = [];
@@ -1242,16 +1196,16 @@
     if (!replyContext) return;
     ensureReplyContext();
     replyContextEl.textContent = `回复：${replyContext}`;
-    const box = findSubtitleBox();
+    const box = visibleSubtitleBox();
     if (box) {
       // Keep the reply quote as a separate small layer above the subtitle
       // frame. It stays left-aligned with the frame but no longer inflates
       // the subtitle box.
-      compactSubtitleBox(box);
+      if (box.dataset?.dshSubtitleBox === "1") compactSubtitleBox(box);
       const rect = box.getBoundingClientRect();
       replyContextEl.style.cssText = [
         "position:fixed",
-        "z-index:9998",
+        "z-index:2147483001",
         "box-sizing:border-box",
         "max-width:min(520px, 68vw)",
         "padding:2px 8px",
@@ -1280,7 +1234,7 @@
     if (!rect || !rect.width) return;
     replyContextEl.style.cssText = [
       "position:fixed",
-      "z-index:9998",
+      "z-index:2147483001",
       "box-sizing:border-box",
       "max-width:min(520px, 68vw)",
       "padding:2px 8px",
@@ -1491,6 +1445,17 @@
     }
   }
 
+  function visibleSubtitleBox() {
+    if (
+      subtitleCloneEl &&
+      getComputedStyle(subtitleCloneEl).display !== "none" &&
+      (subtitleCloneEl.textContent || "").trim()
+    ) {
+      return subtitleCloneEl;
+    }
+    return findSubtitleBox();
+  }
+
   function pinSubtitlePosition() {
     const box = findSubtitleBox();
     if (!box) return;
@@ -1521,7 +1486,7 @@
   function syncReplyContextPosition() {
     pinSubtitlePosition();
     if (!replyContext || !replyContextEl) return;
-    const box = findSubtitleBox();
+    const box = visibleSubtitleBox();
     if (!box) return;
     const rect = box.getBoundingClientRect();
     if (!rect.width) return;
