@@ -146,6 +146,7 @@ class LiveReplySanitizerTest(unittest.TestCase):
         self.assertEqual(sanitize_live_reply("[happy]你好"), "[joy]你好。")
         self.assertEqual(sanitize_live_reply("[开心]你好"), "[joy]你好。")
         self.assertEqual(sanitize_live_reply("[生气]有点烦"), "[anger]有点烦。")
+        self.assertEqual(sanitize_live_reply("[平静]你好"), "[neutral]你好。")
         self.assertEqual(sanitize_live_reply("好开心 (≧▽≦)"), "[joy]好开心。")
         self.assertEqual(sanitize_live_reply("难过 (T_T)"), "[sadness]难过。")
         self.assertEqual(sanitize_live_reply("得意 (￣ω￣)"), "[smirk]得意。")

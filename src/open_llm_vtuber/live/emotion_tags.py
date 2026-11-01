@@ -19,7 +19,7 @@ __all__ = [
 
 # Canonical English key -> Chinese label shown in prompts.
 EMOTION_LABELS: dict[str, str] = {
-    "neutral": "中性",
+    "neutral": "平静",
     "joy": "开心",
     "smirk": "得意",
     "fear": "害怕",
@@ -33,7 +33,7 @@ ZH_TO_EN = {label: key for key, label in EMOTION_LABELS.items()}
 
 # Accept a few common synonyms in model output without advertising them.
 _ZH_SYNONYMS = {
-    "平静": "neutral",
+    "中性": "neutral",
     "高兴": "joy",
     "快乐": "joy",
     "害羞": "smirk",
