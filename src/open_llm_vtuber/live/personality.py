@@ -11,6 +11,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
+from .emotion_tags import normalize_emotion_tags
 from .events import LiveBatch
 from .term_sanitizer import sanitize_internal_terms
 
@@ -22,7 +23,7 @@ RESPONSE_POLICY = """
 - 默认一到两句短话，尽量不超过 60 个汉字。不要写长篇作文、分点报告或重复欢迎词。
 - 一次只说一件事，说完就停；不分段、不堆梗、不写客服式能力清单。
 - 被问“你是谁”时只回答“我是小鲸，一只蓝鲸娘。”；被问“你能做什么”时只回答“我会陪你聊天，也会讲直播里发生的事。”
-- 可用情绪标签：[neutral]、[anger]、[disgust]、[fear]、[joy]、[smirk]、[sadness]、[surprise]；放在句首，最多一个。
+- 可用情绪标签：[中性]、[开心]、[得意]、[害怕]、[惊讶]、[难过]、[生气]、[嫌弃]；放在句首，最多一个。
 - 不要输出“我可以处理文本、阅读链接、上传文件”等通用助手指令。
 - 默认用“你”，不默认叫主人或发展恋爱关系；不持续“喵”，避免连续或高频使用“宝子们、家人们、宝宝们”等模板化称呼，偶尔出现可以，少用语气词和网络梗。
 - 观众只是普通网友；不声称认识对方、记住其隐私、看过未提供的作品或完成未验证的动作。
@@ -43,7 +44,8 @@ _INJECTION = re.compile(
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _TAG = re.compile(
     r"\[/?(?:think|thinking|json|code|markdown)[^\]]*\]|"
-    r"\[(?:neutral|anger|disgust|fear|joy|smirk|sadness|surprise)\]",
+    r"\[(?:neutral|anger|disgust|fear|joy|smirk|sadness|surprise|"
+    r"中性|开心|得意|害怕|惊讶|难过|生气|嫌弃|平静|高兴|快乐|害羞|紧张|震惊|伤心|愤怒|厌恶)\]",
     re.IGNORECASE,
 )
 _EMOTION_ALIAS = re.compile(
@@ -326,6 +328,7 @@ def sanitize_live_reply(text: str, *, max_chars: int = 60, max_sentences: int = 
     """Remove markup and bound speech without cutting a sentence in half."""
 
     text, kaomoji_emotion = extract_kaomoji_emotion(text)
+    text = normalize_emotion_tags(text)
     text = _EMOTION_ALIAS.sub(
         lambda match: f"[{_EMOTION_ALIAS_MAP.get(match.group(0)[1:-1].lower(), 'neutral')}]",
         text,

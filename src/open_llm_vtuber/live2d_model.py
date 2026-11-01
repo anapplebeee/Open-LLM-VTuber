@@ -2,6 +2,8 @@ import json
 import chardet
 from loguru import logger
 
+from .live.emotion_tags import chinese_label, normalize_emotion_tags
+
 # This class will only prepare the payload for the live2d model
 # the process of sending the payload should be done by the caller
 # This class is **Not responsible** for sending the payload to the server
@@ -48,9 +50,12 @@ class Live2dModel:
         self.emo_map: dict = {
             k.lower(): v for k, v in self.model_info["emotionMap"].items()
         }
-        self.emo_str: str = " ".join([f"[{key}]," for key in self.emo_map.keys()])
-        # emo_str is a string of the keys in the emoMap dictionary. The keys are enclosed in square brackets.
-        # example: `"[fear], [anger], [disgust], [sadness], [joy], [neutral], [surprise]"`
+        self.emo_str: str = " ".join(
+            [f"[{chinese_label(key)}]," for key in self.emo_map.keys()]
+        )
+        # Prompt-facing labels are Chinese; internal emotionMap keys and
+        # expression names stay stable for the Live2D runtime.
+        # example: `"[害怕], [生气], [嫌弃], [难过], [开心], [中性], [惊讶]"`
 
     def _load_file_content(self, file_path: str) -> str:
         """Load the content of a file with robust encoding handling."""
@@ -156,7 +161,7 @@ class Live2dModel:
         """
 
         expression_list = []
-        str_to_check = str_to_check.lower()
+        str_to_check = normalize_emotion_tags(str_to_check).lower()
         # emo_map values may be expression indices (legacy models) or names
         # (model-specific maps such as deepseek's happy/happy2/...).
         i = 0
@@ -184,6 +189,7 @@ class Live2dModel:
             str: The cleaned string with the emotion keywords removed.
         """
 
+        target_str = normalize_emotion_tags(target_str)
         lower_str = target_str.lower()
 
         for key in self.emo_map.keys():

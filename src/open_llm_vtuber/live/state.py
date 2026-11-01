@@ -11,6 +11,7 @@ import re
 import time
 from dataclasses import dataclass, field, replace
 
+from .emotion_tags import ZH_TO_EN
 from .events import LiveBatch, RoomEvent
 
 __all__ = [
@@ -35,6 +36,7 @@ _ALIASES = {
     "scared": "fear",
     "shocked": "surprise",
     "smug": "smirk",
+    **ZH_TO_EN,
 }
 _PRAISE = re.compile(r"谢谢|喜欢|可爱|厉害|好棒|真棒|加油|爱你|优秀|聪明|好听")
 _INSULT = re.compile(r"笨蛋|蠢|垃圾|讨厌|滚|丑|无聊|闭嘴|废物")

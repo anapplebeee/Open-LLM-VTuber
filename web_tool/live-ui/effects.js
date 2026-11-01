@@ -54,7 +54,10 @@
               typeof message.display_text.text === "string"
             ) {
               message.display_text.text = message.display_text.text
-                .replace(/\[[a-zA-Z][a-zA-Z0-9_\-]{0,24}\]/g, "")
+                .replace(
+                  /\[(?:[a-zA-Z][a-zA-Z0-9_\-]{0,24}|中性|开心|得意|害怕|惊讶|难过|生气|嫌弃|平静|高兴|快乐|害羞|紧张|震惊|伤心|愤怒|厌恶)\]/g,
+                  ""
+                )
                 .replace(/[ \t]{2,}/g, " ")
                 .trim();
             }
@@ -1332,7 +1335,7 @@
   };
 
   const EMOTION_TAG_PATTERN =
-    /\[(?:neutral|joy|smirk|fear|surprise|sadness|anger|disgust|happy2?|puzzled|relax|unhappy|sad|excited|shy|blush)\]/gi;
+    /\[(?:neutral|joy|smirk|fear|surprise|sadness|anger|disgust|happy2?|puzzled|relax|unhappy|sad|excited|shy|blush|中性|开心|得意|害怕|惊讶|难过|生气|嫌弃|平静|高兴|快乐|害羞|紧张|震惊|伤心|愤怒|厌恶)\]/gi;
 
   function sanitizeRenderedTags(root = document.body) {
     if (!root) return;

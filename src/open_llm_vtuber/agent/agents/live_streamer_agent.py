@@ -16,6 +16,7 @@ from typing import Any
 from loguru import logger
 
 from ...live.character_profile import XIAOJING_PROFILE
+from ...live.emotion_tags import normalize_emotion_tags
 from ...live.events import LiveBatch
 from ...live.personality import (
     RESPONSE_POLICY,
@@ -279,7 +280,7 @@ class LiveStreamerAgent(BasicMemoryAgent):
             valid_tags=["think"],
         )
         async def stream_text() -> AsyncIterator[str]:
-            yield text
+            yield normalize_emotion_tags(text)
 
         async for output in stream_text():
             yield output

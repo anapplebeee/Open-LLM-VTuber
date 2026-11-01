@@ -34,7 +34,11 @@ class DeepSeekModelAssetTest(unittest.TestCase):
         self.assertEqual(model.extract_emotion("[anger]生气"), ["anger"])
         self.assertEqual(model.extract_emotion("[disgust]嫌弃"), ["unhappy"])
         self.assertEqual(model.extract_emotion("[neutral]平静"), ["relax"])
-        self.assertIn("[joy]", model.emo_str)
+        self.assertIn("[开心]", model.emo_str)
+        self.assertIn("[生气]", model.emo_str)
+        self.assertEqual(model.extract_emotion("[开心]好开心"), ["happy"])
+        self.assertEqual(model.extract_emotion("[生气]有点生气"), ["anger"])
+        self.assertEqual(model.extract_emotion("[得意]得意"), ["happy2"])
 
     def test_required_assets_exist(self):
         model3 = json.loads((MODEL_DIR / "deepseek.model3.json").read_text(encoding="utf-8"))
