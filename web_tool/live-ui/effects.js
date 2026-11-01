@@ -1331,6 +1331,11 @@
     if (getComputedStyle(wrapper).bottom !== "135px") {
       wrapper.style.setProperty("bottom", "135px", "important");
     }
+    // The Live2D stage has its own stacking context. Keep the subtitle
+    // wrapper above it; a high z-index on the inner text box alone cannot
+    // escape a lower ancestor stacking context.
+    wrapper.style.setProperty("z-index", "60", "important");
+    wrapper.style.setProperty("position", "absolute", "important");
   }
 
   function syncReplyContextPosition() {
@@ -2211,6 +2216,17 @@
   }
 
   function installTextPatches() {
+    // One-time recovery from offsets saved by the earlier buggy nested drag:
+    // reset the subtitle to its normal bottom-center position on this build.
+    try {
+      const resetKey = "dsh-subtitle-reset-v42";
+      if (!localStorage.getItem(resetKey)) {
+        localStorage.removeItem("dsh-subtitle-offset");
+        localStorage.setItem(resetKey, "1");
+      }
+    } catch (_) {
+      /* ignore */
+    }
     ensureLayer();
     ensureReplyContext();
     ensurePlaylist();
