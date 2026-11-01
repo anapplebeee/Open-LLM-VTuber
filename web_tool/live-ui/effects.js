@@ -1310,9 +1310,28 @@
     return null;
   }
 
+  function raiseSubtitleLayer(box) {
+    // The OLV app can nest the subtitle under a positioned wrapper with a
+    // lower stacking context than the Live2D stage. High z-index on the inner
+    // text is not enough in that case, so lift every ancestor between the
+    // subtitle and the app root.
+    let node = box;
+    let depth = 0;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const style = getComputedStyle(node);
+      if (style.position === "static") {
+        node.style.setProperty("position", "relative", "important");
+      }
+      node.style.setProperty("z-index", String(100 + depth), "important");
+      node = node.parentElement;
+      depth += 1;
+    }
+  }
+
   function pinSubtitlePosition() {
     const box = findSubtitleBox();
     if (!box) return;
+    raiseSubtitleLayer(box);
     const wrapper = findSubtitleWrapper(box);
     if (!wrapper) return;
     if (subtitlePinWrapper !== wrapper) {
