@@ -92,6 +92,7 @@
   let presenceEl = null;
   let presenceState = "";
   let presenceTimer = 0;
+  let expressionTimers = [];
 
   let songQueue = [];
   let playlistEl = null;
@@ -1090,25 +1091,74 @@
     });
   }
 
+  function applyExpressionOnce(rawValue) {
+    let applied = false;
+    let name = rawValue;
+    try {
+      const adapter = window.getLAppAdapter?.();
+      if (adapter && typeof adapter.getExpressionName === "function" && typeof rawValue === "number") {
+        name = adapter.getExpressionName(rawValue) || name;
+      }
+      if (adapter && typeof adapter.setExpression === "function") {
+        adapter.setExpression(name);
+        applied = true;
+      }
+    } catch (_) {
+      /* the built frontend may not expose the adapter */
+    }
+    try {
+      const manager = window.getLive2DManager?.();
+      let model = manager?.getModel?.(0);
+      if (!model && manager?.getModel) {
+        // Usually getModel(0); retry indices defensively for older builds.
+        for (let index = 0; index < 3 && !model; index += 1) {
+          model = manager.getModel(index);
+        }
+      }
+      if (!model && window.getLAppAdapter) {
+        model = window.getLAppAdapter()?.getModel?.();
+      }
+      if (model && typeof model.setExpression === "function") {
+        let expressionName = name;
+        if (typeof rawValue === "number" && model._modelSetting?.getExpressionName) {
+          expressionName = model._modelSetting.getExpressionName(rawValue) || expressionName;
+        }
+        model.setExpression(String(expressionName));
+        applied = true;
+      }
+    } catch (error) {
+      console.warn("[dsh] expression apply failed", error);
+    }
+    window.__dshLastExpression = String(name);
+    return applied;
+  }
+
+  function applyExpressionSustained(rawValue) {
+    for (const timer of expressionTimers) clearTimeout(timer);
+    expressionTimers = [];
+    // OLV can reset the default expression on AI-state transitions. Re-apply
+    // a few times while the new audio utterance settles so the requested
+    // expression is actually visible.
+    for (const delay of [0, 120, 450, 1000, 1800]) {
+      expressionTimers.push(
+        setTimeout(() => {
+          const applied = applyExpressionOnce(rawValue);
+          console.debug("[dsh] expression", rawValue, applied);
+        }, delay)
+      );
+    }
+  }
+
   window.__dshShowLiveEffect = (expressions) => {
-    const values = (Array.isArray(expressions) ? expressions : []).map((v) => String(v).toLowerCase());
+    const values = (Array.isArray(expressions) ? expressions : []).map((v) =>
+      typeof v === "number" ? v : String(v).toLowerCase()
+    );
     if (!values.length) return;
     ensureLayer();
     clearTimeout(clearTimer);
     hideAll();
     positionEffectLayer();
-    // Apply the expression directly as a fallback for builds where
-    // window.getLAppAdapter is unavailable. The normal OLV path still applies
-    // it through setExpression; this is idempotent.
-    try {
-      const manager = window.getLive2DManager?.();
-      const model = manager?.getModel?.(0);
-      if (model && typeof model.setExpression === "function") {
-        model.setExpression(String(values[0]));
-      }
-    } catch (_) {
-      /* expression support is optional */
-    }
+    applyExpressionSustained(values[0]);
     const joined = values.join(" ");
     if (/anger|angry/.test(joined)) {
       fire?.classList.add("on");
