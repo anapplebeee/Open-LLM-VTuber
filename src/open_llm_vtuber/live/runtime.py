@@ -37,6 +37,32 @@ from .store import LiveStore
 OutputHandler = Callable[[Any], Awaitable[None]]
 
 
+_INTERNAL_REPLY_MARKERS = (
+    "【点歌系统】",
+    "【进入直播间】",
+    "请先用“欢迎",
+    "请用一句自然短话回应观众",
+    "不要念出方括号或系统标签",
+    "不要只点评名字而漏掉欢迎语",
+    "若用户名不适合点评",
+)
+
+
+def clean_reply_context(text: str) -> str:
+    """Strip internal prompt suffixes before showing a reply quote on stream."""
+    value = str(text or "")
+    for marker in _INTERNAL_REPLY_MARKERS:
+        index = value.find(marker)
+        if index > 0:
+            value = value[:index]
+    lines = []
+    for line in value.splitlines():
+        if any(marker in line for marker in _INTERNAL_REPLY_MARKERS):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 class LiveSession:
     """One live session with a director, a rundown and one agent."""
 
@@ -523,7 +549,7 @@ class LiveSession:
                             f"欢迎{reply_event.user.name or '观众'}进入直播间"
                         )
                     else:
-                        display_text = reply_event.content.strip()
+                        display_text = clean_reply_context(reply_event.content)
                         if not display_text and reply_event.gift is not None:
                             display_text = (
                                 f"送出 {reply_event.gift.name}"
