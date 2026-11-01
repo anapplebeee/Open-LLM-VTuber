@@ -31,7 +31,12 @@ from .proactive import ProactiveScheduler
 from .review import LiveReviewLogger
 from .rundown import RundownState
 from .song_player import NeteaseSongProvider
-from .songbook import SongRequestQueue, detect_song_control, detect_song_correction
+from .songbook import (
+    SongPlaybackState,
+    SongRequestQueue,
+    detect_song_control,
+    detect_song_correction,
+)
 from .state import EmotionEngine, EmotionState, StreamState, ViewerRegistry
 from .store import LiveStore
 
@@ -126,6 +131,7 @@ class LiveSession:
         self.proactive = proactive or ProactiveScheduler()
         self.notebook = notebook or LiveNotebook()
         self.song_requests = SongRequestQueue()
+        self.song_playback = SongPlaybackState()
         self.profile = profile or XIAOJING_PROFILE
         self.emotion_engine = emotion_engine or EmotionEngine()
         self.emotion_state = EmotionState()
@@ -406,10 +412,41 @@ class LiveSession:
     async def finish_song(self, title: str, entry_id: str = "") -> None:
         """Remove a completed track from the live queue and re-broadcast it."""
         self.song_requests.remove_finished(title, entry_id)
+        current = self.song_playback
+        if (
+            (entry_id and current.current_entry_id == entry_id)
+            or (not entry_id and current.current_title == title)
+            or current.state == "idle"
+        ):
+            self._set_song_playback("idle", title, entry_id, error="")
         if self.on_song is not None:
             await self.on_song(
                 {"type": "song-queue", **self.song_requests.snapshot()}
             )
+
+    def _song_index(self, title: str, entry_id: str) -> int:
+        items = self.song_requests.snapshot()["items"]
+        for index, item in enumerate(items):
+            if entry_id and str(item.get("id") or "") == entry_id:
+                return index
+            if not entry_id and str(item.get("title") or "").strip() == title.strip():
+                return index
+        return -1
+
+    def _set_song_playback(
+        self,
+        state: str,
+        title: str,
+        entry_id: str,
+        *,
+        error: str = "",
+    ) -> None:
+        self.song_playback.state = state
+        self.song_playback.current_entry_id = entry_id
+        self.song_playback.current_title = title
+        self.song_playback.current_index = self._song_index(title, entry_id)
+        self.song_playback.last_error = error
+        self.song_playback.updated_at_ms = self._now_ms()
 
     async def play_song_target(
         self, title: str, entry_id: str = "", query: str = ""
@@ -425,12 +462,14 @@ class LiveSession:
         query: str = "",
         play_now: bool = False,
     ) -> None:
+        self._set_song_playback("resolving", title, entry_id)
         try:
             song = await self.song_provider.resolve(query or title)
             if song is None:
                 logger.warning("No playable NetEase result for: {}", title)
                 await self._notify_song_unavailable(title, entry_id, "not_found")
                 return
+            self._set_song_playback("playing", song.title, entry_id)
             payload = {
                 "type": "song",
                 "action": "play",
@@ -464,6 +503,7 @@ class LiveSession:
             except Exception:
                 logger.exception("Failed to notify unavailable song: {}", title)
         await self.finish_song(title, entry_id)
+        self._set_song_playback("failed", title, entry_id, error=reason)
 
     def ingest_bilibili(self, payload: dict[str, Any]) -> bool:
         if not self._running:
@@ -524,6 +564,7 @@ class LiveSession:
             "song_playback": {
                 "enabled": self.song_provider.enabled and self.on_song is not None,
                 "active": len(self._song_tasks),
+                **self.song_playback.to_dict(),
             },
             "emotion": {
                 "label": self.emotion_state.label,

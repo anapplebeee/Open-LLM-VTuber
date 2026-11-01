@@ -122,6 +122,32 @@ class SongQueueSnapshot:
         return {"items": list(self.items), "max_size": self.max_size}
 
 
+@dataclass
+class SongPlaybackState:
+    """Backend-visible playback status for operations and tests.
+
+    The browser remains the audio renderer; this state records what the
+    backend has resolved/dispatched and gives failures a stable reason.
+    """
+
+    state: str = "idle"
+    current_entry_id: str = ""
+    current_title: str = ""
+    current_index: int = -1
+    last_error: str = ""
+    updated_at_ms: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "state": self.state,
+            "current_entry_id": self.current_entry_id,
+            "current_title": self.current_title,
+            "current_index": self.current_index,
+            "last_error": self.last_error,
+            "updated_at_ms": self.updated_at_ms,
+        }
+
+
 class SongRequestQueue:
     """In-memory queue; one instance belongs to one live session."""
 

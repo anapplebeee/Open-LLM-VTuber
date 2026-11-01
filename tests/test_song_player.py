@@ -73,6 +73,8 @@ class SongPlayerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[0]["action"], "play")
         self.assertEqual(payloads[0]["title"], "海底")
         self.assertEqual(payloads[0]["url"], "http://example.test/song.mp3")
+        self.assertEqual(session.song_playback.state, "playing")
+        self.assertEqual(session.song_playback.current_title, "海底")
 
     async def test_missing_song_emits_unavailable_and_removes_queue(self):
         payloads = []
@@ -91,6 +93,8 @@ class SongPlayerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[0]["entry_id"], "entry-1")
         self.assertEqual(payloads[0]["reason"], "not_found")
         self.assertEqual(session.song_requests.snapshot()["items"], [])
+        self.assertEqual(session.song_playback.state, "failed")
+        self.assertEqual(session.song_playback.last_error, "not_found")
 
     async def test_provider_error_emits_unavailable(self):
         payloads = []
@@ -107,6 +111,7 @@ class SongPlayerTest(unittest.IsolatedAsyncioTestCase):
         await session._play_song("出错", "entry-2")
         self.assertEqual(payloads[0]["type"], "song-unavailable")
         self.assertEqual(payloads[0]["reason"], "resolve_error")
+        self.assertEqual(session.song_playback.state, "failed")
 
 
 if __name__ == "__main__":
