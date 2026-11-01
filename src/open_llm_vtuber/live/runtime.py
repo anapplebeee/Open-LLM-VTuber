@@ -516,17 +516,28 @@ class LiveSession:
                     None,
                 )
                 if reply_event is not None:
-                    text = reply_event.content.strip()
-                    if not text and reply_event.gift is not None:
-                        text = f"送出 {reply_event.gift.name} ×{reply_event.gift.count}"
-                    if not text and reply_event.type == "join":
-                        text = "进入了直播间"
-                    if text:
+                    if reply_event.type == "join":
+                        # Join events carry an internal prompt in content. Never
+                        # render that prompt on stream; show only the welcome.
+                        display_text = (
+                            f"欢迎{reply_event.user.name or '观众'}进入直播间"
+                        )
+                    else:
+                        display_text = reply_event.content.strip()
+                        if not display_text and reply_event.gift is not None:
+                            display_text = (
+                                f"送出 {reply_event.gift.name}"
+                                f" ×{reply_event.gift.count}"
+                            )
+                        display_text = (
+                            f"{reply_event.user.name}：{display_text[:80]}"
+                        )
+                    if display_text:
                         try:
                             await self.on_reply(
                                 {
                                     "type": "reply-context",
-                                    "text": f"{reply_event.user.name}：{text[:80]}",
+                                    "text": display_text,
                                 }
                             )
                         except Exception:  # noqa: BLE001 - UI event must not stop live
