@@ -181,10 +181,10 @@ class PolicyDecision:
 class LiveInteractionPolicy:
     """Rate, duplication and prompt-injection gate before any LLM call."""
 
-    global_interval_ms: int = 3_000
-    per_user_interval_ms: int = 15_000
-    duplicate_window_ms: int = 120_000
-    global_burst: int = 4
+    global_interval_ms: int = 500
+    per_user_interval_ms: int = 2_000
+    duplicate_window_ms: int = 3_000
+    global_burst: int = 12
     global_window_ms: int = 60_000
     _last_global_ms: int = field(default=0, init=False)
     _last_user_ms: dict[str, int] = field(default_factory=dict, init=False)

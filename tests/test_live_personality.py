@@ -70,6 +70,9 @@ class LiveInteractionPolicyTest(unittest.TestCase):
         self.assertTrue(
             policy.check(make_batch("今天吃什么", user="u2"), now_ms=12_000).allow
         )
+        # A repeated greeting after the short duplicate window is a genuine
+        # new chat message, not a transport retry.
+        self.assertTrue(policy.check(make_batch("小鲸好呀"), now_ms=14_000).allow)
 
     def test_operator_priority_is_not_suppressed(self):
         policy = LiveInteractionPolicy()
