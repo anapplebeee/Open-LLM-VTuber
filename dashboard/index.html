@@ -348,8 +348,9 @@
       $("olv-status").className = "value small " + statusClass(data.olv?.ok);
       $("tts-status").textContent = tts.ok ? "在线" : "异常";
       $("tts-status").className = "value small " + statusClass(tts.ok);
-      $("dyhub-status").textContent = dyhub.ok ? "在线" : "异常";
-      $("dyhub-status").className = "value small " + statusClass(dyhub.ok);
+      const dyhubDisabled = dyhub.disabled === "native collector mode";
+      $("dyhub-status").textContent = dyhubDisabled ? "已停用" : (dyhub.ok ? "在线" : "异常");
+      $("dyhub-status").className = "value small " + (dyhubDisabled ? "muted" : statusClass(dyhub.ok));
       $("bridge-clients").textContent = data.bridge_ws_clients ?? 0;
       $("room-count").textContent = (data.rooms || []).length;
       const collector = data.collector || {};

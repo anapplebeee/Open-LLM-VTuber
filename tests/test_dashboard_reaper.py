@@ -33,7 +33,10 @@ class DashboardReaperTest(unittest.IsolatedAsyncioTestCase):
                 return rooms
             return {"ok": True}
 
-        with patch.object(dashboard, "_dyhub", side_effect=fake_dyhub):
+        with (
+            patch.object(dashboard, "COLLECTOR_MODE", "dyhub"),
+            patch.object(dashboard, "_dyhub", side_effect=fake_dyhub),
+        ):
             await dashboard._reap_rooms()
 
         deletes = [path for path, method in calls if method == "DELETE"]

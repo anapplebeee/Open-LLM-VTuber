@@ -37,7 +37,7 @@ TTS = os.getenv("LIVE_TTS_URL", "http://127.0.0.1:9880").rstrip("/")
 TTS_PID_PATH = ROOT / "data" / "tts.pid"
 TTS_START_SCRIPT = ROOT / "scripts" / "start_tts.ps1"
 NATIVE_COLLECTOR_SCRIPT = ROOT / "scripts" / "native_douyin_collector.py"
-COLLECTOR_MODE = os.getenv("DASHBOARD_COLLECTOR", "dyhub").strip().lower()
+COLLECTOR_MODE = os.getenv("DASHBOARD_COLLECTOR", "native").strip().lower()
 LIVE_WS_URL = os.getenv("LIVE_WS_URL", "ws://127.0.0.1:12393/live-ws")
 CLIENT_TIMEOUT = 2.0
 _native_process: subprocess.Popen | None = None
@@ -104,6 +104,8 @@ async def run_room_reaper() -> None:
 
 
 async def _reap_rooms() -> None:
+    if COLLECTOR_MODE == "native":
+        return
     payload = await _dyhub("/api/rooms")
     now_ms = int(time.time() * 1000)
     for room in payload.get("rooms") or []:
@@ -300,16 +302,30 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
                 checks[name] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         rooms: list[dict[str, Any]] = []
         stats: dict[str, Any] = {}
-        try:
-            rooms_payload = await _dyhub("/api/rooms")
-            rooms = rooms_payload.get("rooms") or []
-            stats = await _dyhub("/api/stats")
-            # Avoid duplicating the full room list inside the stats payload.
-            if isinstance(stats, dict):
-                stats = {key: value for key, value in stats.items() if key != "rooms"}
-            checks["dyhub"] = {"ok": True}
-        except Exception as exc:  # noqa: BLE001
-            checks["dyhub"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if COLLECTOR_MODE == "native":
+            checks["dyhub"] = {"ok": True, "disabled": "native collector mode"}
+            native = _native_status()
+            if native["running"]:
+                rooms = [
+                    {
+                        "roomId": native["room_id"],
+                        "status": "live",
+                        "meta": {"nickname": "native collector", "title": "native"},
+                        "stats": {},
+                        "hasOwnCookie": False,
+                    }
+                ]
+        else:
+            try:
+                rooms_payload = await _dyhub("/api/rooms")
+                rooms = rooms_payload.get("rooms") or []
+                stats = await _dyhub("/api/stats")
+                # Avoid duplicating the full room list inside the stats payload.
+                if isinstance(stats, dict):
+                    stats = {key: value for key, value in stats.items() if key != "rooms"}
+                checks["dyhub"] = {"ok": True}
+            except Exception as exc:  # noqa: BLE001
+                checks["dyhub"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         gift_rooms = [room for room in rooms if room.get("hasOwnCookie")]
         return {
             "ts": int(time.time() * 1000),
@@ -329,6 +345,22 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
 
     @router.get("/rooms")
     async def rooms():
+        if COLLECTOR_MODE == "native":
+            native = _native_status()
+            return {
+                "rooms": [
+                    {
+                        "roomId": native["room_id"],
+                        "status": "live" if native["running"] else "stopped",
+                        "meta": {"nickname": "native collector", "title": "native"},
+                        "stats": {},
+                        "hasOwnCookie": False,
+                    }
+               
+                ]
+                if native["room_id"]
+                else [],
+            }
         try:
             return await _dyhub("/api/rooms")
         except Exception as exc:  # noqa: BLE001
@@ -362,6 +394,8 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
 
     @router.delete("/rooms/{room_id}")
     async def delete_room(room_id: str):
+        if COLLECTOR_MODE == "native":
+            return _stop_native()
         try:
             return await _dyhub(f"/api/rooms/{room_id}", "DELETE")
         except Exception as exc:  # noqa: BLE001
@@ -369,6 +403,11 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
 
     @router.put("/rooms/{room_id}/cookie")
     async def set_cookie(room_id: str, request: Request):
+        if COLLECTOR_MODE == "native":
+            raise HTTPException(
+                status_code=409,
+                detail="native collector cookie is set via DOUYIN_COOKIE before start",
+            )
         body = await request.json()
         cookie = str(body.get("cookie") or "").strip()
         if not cookie:
@@ -381,6 +420,8 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
 
     @router.post("/rooms/cleanup")
     async def cleanup_rooms():
+        if COLLECTOR_MODE == "native":
+            return {"ok": True, "removed": []}
         try:
             payload = await _dyhub("/api/rooms")
         except Exception as exc:  # noqa: BLE001

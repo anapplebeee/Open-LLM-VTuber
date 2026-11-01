@@ -198,10 +198,11 @@ Node 只做 signature oracle，不是数据面；
 不启动 dyhub server，不连接 dyhub HTTP/WS，不使用 dyhub_bridge.py。
 ```
 
-切换方式：
+当前默认已是 native：
 
 ```text
-DASHBOARD_COLLECTOR=native
+DASHBOARD_COLLECTOR=native   # 默认
+DASHBOARD_COLLECTOR=dyhub    # 回退
 ```
 
 Dashboard 的“连接房间”会启动：
@@ -225,10 +226,45 @@ python scripts/native_douyin_collector.py \
 room id / room status / 事件映射 / 不泄露 cookie
 ```
 
-实测注意：当前测试房间在原生探测时页面返回“直播间已结束”，
-未能完成真实直播事件验证；上线前应先用一个正在直播的房间灰度。
+### 真实灰度结果（2026-11-02）
 
-> 不建议直接删除 dyhub。抖音签名、protobuf、礼物字段和风控变化快，先保留 `DASHBOARD_COLLECTOR=dyhub` 可回退。
+已用一个正在直播的公开房间 `617095421839` 验证原生链路：
+
+```text
+35 秒：
+join = 135
+frames = 80
+messages = 165
+acks = 74
+heartbeats = 6
+dropped = 0
+```
+
+同一房间用 dyhub 对照 20 秒：
+
+```text
+member = 69
+chat = 0
+gift = 0
+```
+
+说明：
+
+- 原生 collector 能真实连上 wss，收包、ack、心跳正常
+- 该房间当前没有 chat/gift 流量；不是原生解码漏消息
+- 匿名连接无法验证 gift；gift 需要登录 Cookie 才会推送
+- 当前自己的直播间 `615688226618` 已结束，所以 native 模式处于“待启动”状态
+
+当前运行状态：
+
+```text
+dyhub: 已停止
+dyhub_bridge: 已停止
+collector: native（无活动房间）
+```
+
+> 不建议直接删除 dyhub。真实开播房间的 chat/gift、风控、重连仍需观察一天；
+> 出问题时设置 `DASHBOARD_COLLECTOR=dyhub` 并重启 OLV 即可回退。
 
 ## 5. Phase 3：资源目标
 
@@ -264,14 +300,17 @@ Audio:    scripts/audio_health_check.py
 - Dashboard 控制面 + 登录鉴权
 - dyhub 房间/Cookie/清理/事件/歌曲状态聚合
 - Python 原生 Douyin collector（数据面 Python，Node 仅签名）
+- 原生 collector 真实 join/心跳/ack 灰度
+- dyhub 与 bridge 已停止，默认 native
 - 房间空闲自动回收
 - TTS 启停生命周期
 - OLV LiveSession registry
 - 资源清理入口
 
-仍待验证 / 后续：
+仍待观察 / 后续：
 
-- 原生 collector 真实直播灰度（当前测试房间页面返回已结束）
+- 原生 collector 的 chat/gift 真实流量（当前测试房间无 chat，gift 需登录 Cookie）
+- 24 小时风控/重连/内存 soak
 - 多采集器自动故障切换
 - 进程级内存图表（当前为 OLV 当前进程 RSS）
-- 原生 collector 的礼物事件需要登录 Cookie
+- 原生 collector 的礼物需要 `DOUYIN_COOKIE`
