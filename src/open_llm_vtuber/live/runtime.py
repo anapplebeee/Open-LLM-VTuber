@@ -25,6 +25,7 @@ from .douyin import map_douyin_payload
 from .events import LiveBatch, RoomEvent
 from .memory import MemoryManager
 from .notebook import LiveNotebook
+from .memes import MemeLibrary
 from .proactive import ProactiveScheduler
 from .review import LiveReviewLogger
 from .rundown import RundownState
@@ -51,6 +52,7 @@ class LiveSession:
         on_song: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_reply: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         review_logger: LiveReviewLogger | None = None,
+        meme_library: MemeLibrary | None = None,
         song_provider: NeteaseSongProvider | None = None,
         store: LiveStore | None = None,
         recap_writer: Any = None,
@@ -71,6 +73,7 @@ class LiveSession:
         self.on_song = on_song
         self.on_reply = on_reply
         self.review_logger = review_logger or LiveReviewLogger()
+        self.meme_library = meme_library or MemeLibrary()
         self.song_provider = song_provider or NeteaseSongProvider()
         self._pending_song_result: Any = None
         self._pending_song_control: str | None = None
@@ -456,6 +459,7 @@ class LiveSession:
             events_text = "\n".join(
                 event.to_agent_text() for event in batch.events
             ) or "本轮没有新的观众事件，按节目单主动推进。"
+            meme_hint = self.meme_library.hint_for_text(events_text)
             if self.store and batch.events:
                 # Keep the user side of the dialogue in live_chat, otherwise a
                 # recap only sees assistant lines and cannot reconstruct it.
@@ -491,6 +495,7 @@ class LiveSession:
                 ),
                 notebook=self.notebook.read(),
                 recent_recap=recent_recap,
+                meme_hint=meme_hint,
                 memories=memories,
                 style_scene=_style_scene(batch),
                 max_chars=self.context_max_chars,

@@ -25,6 +25,7 @@ from ...live.personality import (
     fallback_for_text,
     sanitize_live_reply,
 )
+from ...live.memes import meme_system_guide
 from ...live.planner import LiveDecision, LiveReActPlanner
 from ...live.replyer import LiveReplyer
 from ...live.speech_gate import SpeechGate
@@ -58,7 +59,9 @@ class LiveStreamerAgent(BasicMemoryAgent):
         super().__init__(**kwargs)
         self._character_profile = XIAOJING_PROFILE
         self._system = (
-            f"{self._system}\n{RESPONSE_POLICY}\n{self._character_profile.compact_prompt()}"
+            f"{self._system}\n{RESPONSE_POLICY}\n"
+            f"{self._character_profile.compact_prompt()}\n"
+            f"{meme_system_guide()}"
         )
         self.set_system(self._system)
         self._live_planner = live_planner or LiveReActPlanner(llm=self._llm)
