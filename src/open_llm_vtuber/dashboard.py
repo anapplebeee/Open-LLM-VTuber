@@ -347,8 +347,9 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
     async def rooms():
         if COLLECTOR_MODE == "native":
             native = _native_status()
-            return {
-                "rooms": [
+            room_rows = []
+            if native["room_id"]:
+                room_rows.append(
                     {
                         "roomId": native["room_id"],
                         "status": "live" if native["running"] else "stopped",
@@ -356,11 +357,8 @@ def init_dashboard_routes(default_context_cache: Any = None) -> APIRouter:
                         "stats": {},
                         "hasOwnCookie": False,
                     }
-               
-                ]
-                if native["room_id"]
-                else [],
-            }
+                )
+            return {"rooms": room_rows}
         try:
             return await _dyhub("/api/rooms")
         except Exception as exc:  # noqa: BLE001
